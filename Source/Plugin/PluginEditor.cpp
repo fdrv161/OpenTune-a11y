@@ -19,6 +19,7 @@
 #include "Utils/ScaleUiMapping.h"
 #include "Utils/TimeCoordinate.h"
 #include "UI/UiAssets.h"
+#include "Utils/ScreenReaderAnnouncer.h"
 
 #if JucePlugin_Enable_ARA
 #include "ARA/OpenTuneDocumentController.h"
@@ -699,6 +700,21 @@ void OpenTuneAudioProcessorEditor::timerCallback()
             }
         }
         if (allDone) {
+            // Доступность: зрячий видит, как исчезает заставка «Processing audio» и появляются
+            // ноты. Говорим итог: сколько нот найдено или что анализ не удался.
+            int noteCount = 0;
+            bool failed = false;
+            for (const auto& key : originalF0OverlayTargetContentKeys_) {
+                if (auto snap = processorRef_.getContentSnapshot(key)) {
+                    failed = failed || snap->originalF0State == OriginalF0State::Failed;
+                    noteCount += static_cast<int>(snap->notes.size());
+                }
+            }
+            a11y::announce(pianoRoll_,
+                           failed ? LOC_RAW("Audio analysis failed")
+                                  : Loc::format(LOC_RAW("Audio read, notes: {0}"), juce::String(noteCount)),
+                           a11y::SpeechQueue::keepAll);
+
             originalF0OverlayLatched_ = false;
             originalF0OverlayTargetContentKeys_.clear();
         }
@@ -1446,8 +1462,12 @@ void OpenTuneAudioProcessorEditor::recordRequested()
                 return;
             }
 
-            if (refreshed == 0)
+            if (refreshed == 0) {
+                // Этот звук уже прочитан и не менялся: зрячий просто ничего не видит, а без
+                // сообщения непонятно, сработала ли кнопка.
+                a11y::announce(pianoRoll_, LOC_RAW("Audio already read"));
                 return;
+            }
 
             AppLogger::log("ReadAudio: refreshed " + juce::String(refreshed)
                 + " AudioModification(s) for focused playback region");
@@ -1472,6 +1492,7 @@ void OpenTuneAudioProcessorEditor::recordRequested()
             else
                 pendingNoteGenerationOnReady_.erase(targetKey);
             originalF0OverlayLatched_ = true;
+            a11y::announce(pianoRoll_, LOC_RAW("Processing audio"), a11y::SpeechQueue::keepAll);
         });
 #endif
 }
