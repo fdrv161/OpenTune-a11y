@@ -844,11 +844,12 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     const bool shiftOnly = mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown();
     const bool upOrDown = keyCode == juce::KeyPress::upKey || keyCode == juce::KeyPress::downKey;
     const bool isInfoKey = keyCode == 'I' || keyCode == 'i';
+    const bool isResetKey = keyCode == 'R' || keyCode == 'r';
     const bool isHomeOrEnd = keyCode == juce::KeyPress::homeKey || keyCode == juce::KeyPress::endKey;
 
-    // Дополнительные клавиши для работы без мыши (Shift+Вверх/Вниз, Home, End, I) не отбирают
+    // Дополнительные клавиши для работы без мыши (Shift+Вверх/Вниз, Home, End, I, R) не отбирают
     // сочетание, если пользователь назначил его на что-то в настройках горячих клавиш.
-    const bool extraKey = (shiftOnly && upOrDown) || (plain && (isInfoKey || isHomeOrEnd));
+    const bool extraKey = (shiftOnly && upOrDown) || (plain && (isInfoKey || isResetKey || isHomeOrEnd));
     if (extraKey
         && KeyShortcutConfig::findShortcutForBinding(ctx_.getShortcutSettings(),
                                                      KeyShortcutConfig::KeyBinding(keyCode, mods))
@@ -862,6 +863,12 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     }
     if (!plain)
         return false;
+
+    if (isResetKey) {
+        // R — вернуть выбранные ноты на спетую высоту (сбросить правку высоты).
+        moveSelectedNotesPitchByKeyboard(0, false, true);
+        return true;
+    }
 
     const auto& notes = committedNotes(ctx_);
     const int noteCount = static_cast<int>(notes.size());
@@ -956,7 +963,7 @@ void PianoRollToolHandler::notifyKeyboardNote(KeyboardNoteEvent event, const std
         ctx_.notifyKeyboardNote(event, notes, index);
 }
 
-void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool fineCents)
+void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool fineCents, bool resetToSung)
 {
     const auto& notes = committedNotes(ctx_);
     const auto selectedIndices = collectSelectedNoteIndices(notes);
@@ -988,7 +995,11 @@ void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool 
         const float initialOffset = note.pitchOffset;
         const float currentMidi = baseMidi + initialOffset;
         float targetMidi = currentMidi;
-        if (noSnap || fineCents) {
+        if (resetToSung) {
+            // originalPitch — спетая высота; у нот без неё сбрасывать не к чему.
+            if (note.originalPitch > 0.0f)
+                targetMidi = PitchUtils::freqToMidi(note.originalPitch);
+        } else if (noSnap || fineCents) {
             targetMidi += static_cast<float>(direction) * 0.01f;
         } else if (scaleSnapEnabled) {
             const float firstCandidate = direction > 0
@@ -1016,8 +1027,12 @@ void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool 
         rangeStart = std::min(rangeStart, note.startTime);
         rangeEnd = std::max(rangeEnd, note.endTime);
     }
-    if (changedOffsets.empty())
+    if (changedOffsets.empty()) {
+        // Сброс ноты, которая и так не тронута: всё равно говорим высоту, чтобы R не молчала.
+        if (resetToSung)
+            notifyKeyboardNote(KeyboardNoteEvent::PitchMoved, notes, selectedIndices.front());
         return;
+    }
 
     const F0FrameRange editRange = ctx_.getF0Timeline().rangeForTimes(rangeStart, rangeEnd);
     const auto contentSnapshot = ctx_.getEditableContentSnapshot();

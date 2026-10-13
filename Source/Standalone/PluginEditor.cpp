@@ -714,10 +714,7 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
     pianoRoll_.setContentCommands(processorRef_.getContentCommands());
     pianoRoll_.setPianoKeyAudition(&processorRef_.getPianoKeyAudition());
     pianoRoll_.setNoteAudition(&processorRef_.getNoteAudition());
-    pianoRoll_.setRenderCacheProvider([this](ContentKey key) -> std::shared_ptr<const RenderCache> {
-        auto* renderService = processorRef_.getContentRenderService();
-        return renderService != nullptr ? renderService->getRenderCache(key) : nullptr;
-    });
+    pianoRoll_.setRenderCacheProvider([this](ContentKey key) { return processorRef_.getReadableRenderCache(key); });
     {
         const int activeTrack = getStandaloneActiveTrack(processorRef_);
         const int placementIndex = getStandaloneSelectedPlacementIndex(processorRef_, activeTrack);

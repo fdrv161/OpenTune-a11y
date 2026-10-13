@@ -183,10 +183,7 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
     // Piano key audition
     pianoRoll_.setPianoKeyAudition(&processorRef_.getPianoKeyAudition());
     pianoRoll_.setNoteAudition(&processorRef_.getNoteAudition());
-    pianoRoll_.setRenderCacheProvider([this](ContentKey key) -> std::shared_ptr<const RenderCache> {
-        auto* renderService = processorRef_.getContentRenderService();
-        return renderService != nullptr ? renderService->getRenderCache(key) : nullptr;
-    });
+    pianoRoll_.setRenderCacheProvider([this](ContentKey key) { return processorRef_.getReadableRenderCache(key); });
 
     // Menu popup callbacks — MenuBarComponent stays hidden, provides menu content
     // via TransportBar icon buttons (File/Edit/View)

@@ -5693,19 +5693,10 @@ juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& n
         return juce::String::fromUTF8(NoteSpeech::describeMidi(midi, sharpWord).c_str());
     };
 
-    if (detail == NoteDetail::Target)
+    // При переходе стрелками и после сдвига — только то, как нота звучит сейчас (цель).
+    // Спетую высоту и остальное говорит клавиша I (NoteDetail::Full).
+    if (detail == NoteDetail::Target || detail == NoteDetail::Navigation)
         return text(targetMidi);
-
-    if (detail == NoteDetail::Navigation) {
-        // Цель не называем только у нетронутой ноты (цель совпадает со спетым до цента):
-        // так на слух сразу понятно, какие ноты уже исправлены.
-        const auto sungParts = NoteSpeech::splitMidi(sungMidi);
-        const auto targetParts = NoteSpeech::splitMidi(targetMidi);
-        juce::String line = text(sungMidi);
-        if (targetParts.midi != sungParts.midi || targetParts.cents != sungParts.cents)
-            line << ", " << Loc::format(LOC_RAW("target {0}"), text(targetMidi));
-        return line;
-    }
 
     // Номер по времени начала, а не по положению в массиве.
     int ordinal = 1;
