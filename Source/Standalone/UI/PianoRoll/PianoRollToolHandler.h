@@ -99,7 +99,8 @@ public:
         Split,              // X: нота разрезана, index — левая часть
         Merged,             // J: нота склеена со следующей, index — результат
         CursorOutsideNote,  // X: курсор REAPER не внутри выбранной ноты
-        NoAdjacentNote      // J: следующей ноты вплотную нет
+        NoAdjacentNote,     // J: следующей ноты вплотную нет
+        AllSelected         // Ctrl+A: выбраны все ноты
     };
 
     // PianoRoll 组件提供的回调上下文。

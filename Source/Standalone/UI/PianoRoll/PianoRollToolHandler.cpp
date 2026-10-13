@@ -750,15 +750,18 @@ bool PianoRollToolHandler::keyPressed(const juce::KeyPress& key,
             && !contentSnapshot->pitchCurve->isEmpty();
         
         if (!hasNotes && !hasCurve) {
+            notifyKeyboardNote(KeyboardNoteEvent::NoNotes, notes, -1);
             return true;
         }
-        
+
         if (hasNotes) {
             selectAllNotes(notes);
         }
-        
+
         // F0 范围从 noteSelection 按需派生，无需同步。
         if (ctx_.invalidateSelectionFeedback) ctx_.invalidateSelectionFeedback();
+        // Доступность: выделение без мыши иначе никак не подтверждается.
+        notifyKeyboardNote(hasNotes ? KeyboardNoteEvent::AllSelected : KeyboardNoteEvent::NoNotes, notes, -1);
         return true;
     }
 

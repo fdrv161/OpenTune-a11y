@@ -5755,6 +5755,10 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
         case Event::NoAdjacentNote:
             a11y::announce(*this, LOC_RAW("No adjacent next note"));
             return;
+        case Event::AllSelected:
+            a11y::announce(*this, Loc::format(LOC_RAW("All notes selected: {0}"),
+                                              juce::String(static_cast<int>(notes.size()))));
+            return;
     }
 }
 
