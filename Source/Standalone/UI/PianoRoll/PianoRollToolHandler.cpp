@@ -993,8 +993,9 @@ std::optional<double> PianoRollToolHandler::playheadSourceTime() const
     return map.timelineToSource(ctx_.getPlayheadTimelineSeconds());
 }
 
-// X: разрезать выбранную ноту по курсору REAPER. Делает то же, что ножницы мышью
-// (handleScissorsToolUp), но только с выбранной нотой.
+// X: разрезать ноту по курсору REAPER. Делает то же, что ножницы мышью
+// (handleScissorsToolUp), но режет одну ноту: выбранную, если курсор на ней, иначе ту,
+// на которой стоит курсор. Так не нужно сначала искать эту ноту стрелками.
 void PianoRollToolHandler::splitSelectedNoteAtPlayhead()
 {
     const auto beforeNotes = committedNotes(ctx_);
@@ -1003,22 +1004,34 @@ void PianoRollToolHandler::splitSelectedNoteAtPlayhead()
         return;
     }
     const auto selected = collectSelectedNoteIndices(beforeNotes);
-    if (selected.empty()) {
-        notifyKeyboardNote(KeyboardNoteEvent::NoSelection, beforeNotes, -1);
-        return;
-    }
-
-    const int index = selected.front();
-    const Note& original = beforeNotes[static_cast<size_t>(index)];
     const auto splitTime = playheadSourceTime();
+
     // Части короче 20 мс не создаём: курсор у самого края ноты — почти наверняка промах.
-    constexpr double kMinPartSeconds = 0.02;
-    if (!splitTime
-        || *splitTime <= original.startTime + kMinPartSeconds
-        || *splitTime >= original.endTime - kMinPartSeconds) {
-        notifyKeyboardNote(KeyboardNoteEvent::CursorOutsideNote, beforeNotes, index);
+    static constexpr double kMinPartSeconds = 0.02;
+    const auto cursorInside = [&splitTime](const Note& note) {
+        return splitTime.has_value()
+            && *splitTime > note.startTime + kMinPartSeconds
+            && *splitTime < note.endTime - kMinPartSeconds;
+    };
+
+    int index = -1;
+    if (!selected.empty() && cursorInside(beforeNotes[static_cast<size_t>(selected.front())])) {
+        index = selected.front();
+    } else {
+        for (int i = 0; i < static_cast<int>(beforeNotes.size()); ++i) {
+            if (cursorInside(beforeNotes[static_cast<size_t>(i)])) {
+                index = i;
+                break;
+            }
+        }
+    }
+    if (index < 0) {
+        // index — выбранная нота (если есть), чтобы в сообщении назвать её время для сравнения.
+        notifyKeyboardNote(KeyboardNoteEvent::CursorOutsideNote, beforeNotes,
+                           selected.empty() ? -1 : selected.front());
         return;
     }
+    const Note& original = beforeNotes[static_cast<size_t>(index)];
 
     Note left = original;
     Note right = original;

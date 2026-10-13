@@ -5700,6 +5700,10 @@ juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& n
     if (detail == NoteDetail::Target || detail == NoteDetail::Navigation)
         return text(targetMidi);
 
+    // Время — на шкале проекта, как в REAPER, а не внутри аудиофайла.
+    const double timelineStart = sourceTimeToTimelineTime(note.startTime);
+    const double timelineEnd = sourceTimeToTimelineTime(note.endTime);
+
     // Номер по времени начала, а не по положению в массиве.
     int ordinal = 1;
     for (const auto& other : notes)
@@ -5711,7 +5715,7 @@ juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& n
     line << ", " << Loc::format(LOC_RAW("sung {0}"), text(sungMidi))
          << ", " << Loc::format(LOC_RAW("target {0}"), text(targetMidi))
          << ", " << Loc::format(LOC_RAW("start {0} s, length {1} s"),
-                                juce::String(note.startTime, 2), juce::String(note.getDuration(), 2));
+                                juce::String(timelineStart, 2), juce::String(timelineEnd - timelineStart, 2));
     return line;
 }
 
@@ -5749,9 +5753,20 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             a11y::announce(*this, LOC_RAW("Notes merged") + ", "
                                       + describeKeyboardNote(notes, index, NoteDetail::Navigation));
             return;
-        case Event::CursorOutsideNote:
-            a11y::announce(*this, LOC_RAW("Cursor is not inside the selected note"));
+        case Event::CursorOutsideNote: {
+            // Называем время курсора так, как его видит плагин (время проекта, как в REAPER),
+            // и время выбранной ноты: сразу понятно, куда переставить курсор.
+            juce::String line = Loc::format(LOC_RAW("Cursor at {0} s is not on a note"),
+                                            juce::String(playheadTimeForPaint_, 2));
+            if (index >= 0 && index < static_cast<int>(notes.size())) {
+                const auto& note = notes[static_cast<size_t>(index)];
+                line << ". " << Loc::format(LOC_RAW("Selected note: {0} to {1} s"),
+                                            juce::String(sourceTimeToTimelineTime(note.startTime), 2),
+                                            juce::String(sourceTimeToTimelineTime(note.endTime), 2));
+            }
+            a11y::announce(*this, line);
             return;
+        }
         case Event::NoAdjacentNote:
             a11y::announce(*this, LOC_RAW("No adjacent next note"));
             return;

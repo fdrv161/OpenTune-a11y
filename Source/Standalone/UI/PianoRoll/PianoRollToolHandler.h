@@ -98,7 +98,7 @@ public:
         NoSelection, // ноты есть, но ни одна не выбрана
         Split,              // X: нота разрезана, index — левая часть
         Merged,             // J: нота склеена со следующей, index — результат
-        CursorOutsideNote,  // X: курсор REAPER не внутри выбранной ноты
+        CursorOutsideNote,  // X: курсор REAPER не на ноте; index — выбранная нота или -1
         NoAdjacentNote,     // J: следующей ноты вплотную нет
         AllSelected         // Ctrl+A: выбраны все ноты
     };
