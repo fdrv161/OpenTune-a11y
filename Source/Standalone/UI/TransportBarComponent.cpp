@@ -707,7 +707,10 @@ void BpmValueField::cancelEdit()
 UnifiedToolbarButton::UnifiedToolbarButton(const juce::String& name, juce::Path iconPath, juce::Path toggledIconPath)
     : juce::Button(name), iconPath_(iconPath), toggledIconPath_(toggledIconPath)
 {
-    setWantsKeyboardFocus(false);
+    // Доступность: кнопки панели (File, Edit, View, Record и др.) должны достигаться по Tab.
+    // Щелчок мышью по-прежнему не забирает фокус, чтобы клавиши оставались в окне нот.
+    setWantsKeyboardFocus(true);
+    setMouseClickGrabsKeyboardFocus(false);
 }
 
 void UnifiedToolbarButton::setIcon(juce::Path iconPath)
