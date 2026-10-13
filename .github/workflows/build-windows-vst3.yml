@@ -1,0 +1,103 @@
+# Сборка VST3 под Windows в GitHub Actions.
+# Запускается только вручную (вкладка Actions или `gh workflow run`), чтобы не тратить минуты.
+# Все сторонние библиотеки не лежат в репозитории, поэтому скачиваются здесь (см. BUILDING.md).
+name: Windows VST3
+
+on:
+  workflow_dispatch:
+    inputs:
+      juce_ref:
+        description: "Ветка или тег JUCE"
+        default: "master"
+        required: true
+
+concurrency:
+  group: windows-vst3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Скачать зависимости
+        env:
+          JUCE_REF: ${{ inputs.juce_ref }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $tp = 'ThirdParty'
+          New-Item -ItemType Directory -Force $tp | Out-Null
+
+          git clone --depth 1 --branch $env:JUCE_REF https://github.com/juce-framework/JUCE.git JUCE-master
+          git clone --depth 1 --recursive --shallow-submodules --branch releases/2.3.0 `
+            https://github.com/Celemony/ARA_SDK.git "$tp/ARA_SDK-releases-2.3.0"
+
+          # В ARA 2.3.0 файл переименован, а JUCE всё ещё подключает старое имя (см. BUILDING.md).
+          $araCpp = 'JUCE-master/modules/juce_audio_plugin_client/juce_audio_plugin_client_ARA.cpp'
+          $src = Get-Content -Raw $araCpp
+          if ($src -match 'ARAChannelArrangement\.cpp') {
+            $src -replace 'ARAChannelArrangement\.cpp', 'ARAChannelFormat.cpp' | Set-Content -NoNewline $araCpp
+            Write-Host 'JUCE ARA include patched'
+          }
+
+          function Get-Package([string]$url, [string]$dest) {
+            $tmp = Join-Path $env:RUNNER_TEMP ([IO.Path]::GetRandomFileName() + '.zip')
+            Invoke-WebRequest $url -OutFile $tmp
+            Expand-Archive $tmp -DestinationPath $dest -Force
+          }
+
+          # Архив ORT CPU уже содержит папку onnxruntime-win-x64-1.24.4.
+          Get-Package 'https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-win-x64-1.24.4.zip' $tp
+          Get-Package 'https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/1.24.4' "$tp/onnxruntime-dml-1.24.4"
+          Get-Package 'https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.15.4' "$tp/microsoft.ai.directml.1.15.4"
+          Get-Package 'https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/1.619.5' "$tp/microsoft.direct3d.d3d12.1.619.5"
+
+          # Архив SoundTouch распаковывается в папку с другим именем — переименовываем.
+          $stTmp = Join-Path $env:RUNNER_TEMP 'soundtouch'
+          Get-Package 'https://codeberg.org/soundtouch/soundtouch/archive/2.3.3.zip' $stTmp
+          $stRoot = Get-ChildItem $stTmp -Directory | Select-Object -First 1
+          Move-Item $stRoot.FullName "$tp/soundtouch-2.3.3"
+
+          if (-not (Test-Path "$tp/r8brain-free-src-master/CDSPResampler.h")) {
+            git clone --depth 1 https://github.com/avaneev/r8brain-free-src.git "$tp/r8brain-free-src-master"
+          }
+
+          # Модели не собираются, но CMake копирует их в плагин. Кладём пустые заглушки,
+          # а после сборки удаляем папку models из плагина: он возьмёт модели из установленного OpenTune.
+          New-Item -ItemType Directory -Force models, pc_nsf_hifigan_44.1k_ONNX | Out-Null
+          New-Item -ItemType File -Force models/fcpe.onnx | Out-Null
+          New-Item -ItemType File -Force pc_nsf_hifigan_44.1k_ONNX/pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.onnx | Out-Null
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Настроить CMake
+        run: |
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) { choco install ninja -y --no-progress }
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Собрать VST3
+        run: cmake --build build --target OpenTune_VST3 --parallel
+
+      - name: Подготовить плагин
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = 'build/OpenTune_artefacts/Release/VST3/OpenTune.vst3'
+          Remove-Item -Recurse -Force "$bundle/Contents/x86_64-win/models"
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item -Recurse $bundle out/
+          Get-ChildItem -Recurse out | ForEach-Object { $_.FullName }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTune-VST3-${{ github.sha }}
+          path: out/
+          retention-days: 7
