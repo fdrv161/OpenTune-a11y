@@ -95,7 +95,11 @@ public:
         PitchMoved,  // сдвинули высоту стрелкой вверх/вниз
         Info,        // запросили полную информацию (клавиша I)
         NoNotes,     // нот нет совсем
-        NoSelection  // ноты есть, но ни одна не выбрана
+        NoSelection, // ноты есть, но ни одна не выбрана
+        Split,              // X: нота разрезана, index — левая часть
+        Merged,             // J: нота склеена со следующей, index — результат
+        CursorOutsideNote,  // X: курсор REAPER не внутри выбранной ноты
+        NoAdjacentNote      // J: следующей ноты вплотную нет
     };
 
     // PianoRoll 组件提供的回调上下文。
@@ -192,6 +196,8 @@ public:
         std::function<void(size_t, float, float)> notifyNoteOffsetChanged;
         // notes — актуальный список (после сдвига — уже с новой высотой), index — нота или -1.
         std::function<void(KeyboardNoteEvent, const std::vector<Note>&, int)> notifyKeyboardNote;
+        // Положение курсора воспроизведения на шкале проекта (секунды) — для резки нот с клавиатуры.
+        std::function<double()> getPlayheadTimelineSeconds;
 
         // === EQ Tool ===
         // 打开 EQ 弹窗预览：参数为主音符 index（纯点击 = mouseDown 记录的 pending
@@ -321,6 +327,9 @@ private:
     void moveSelectedNotesPitchByKeyboard(int direction, bool fineCents = false, bool resetToSung = false);
     void selectNoteFromKeyboard(const std::vector<Note>& notes, int index);
     void notifyKeyboardNote(KeyboardNoteEvent event, const std::vector<Note>& notes, int index);
+    std::optional<double> playheadSourceTime() const;
+    void splitSelectedNoteAtPlayhead();
+    void mergeSelectedNoteWithNext();
     // Hit-test handles within ±5 px of a TimeGrid handle's output_seconds.
     // Returns 0 if no hit.
     uint64_t hitTestTimeGridHandle(const juce::MouseEvent& e) const;

@@ -220,6 +220,8 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
                                         const std::vector<Note>& notes, int index) {
         handleKeyboardNote(event, notes, index);
     };
+    // То же время, что рисуется как курсор воспроизведения (с учётом ещё не принятой хостом перемотки).
+    toolCtx.getPlayheadTimelineSeconds = [this]() { return playheadTimeForPaint_; };
     toolCtx.getPianoKeyWidth = [this]() { return getTimelineContentStartX(); };
     toolCtx.getContentProjection = [this]() { return activeContentProjection(); };
     toolCtx.getHandDrawPreviewBounds = [this]() { return getHandDrawPreviewBounds(); };
@@ -5738,6 +5740,20 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             return;
         case Event::Info:
             a11y::announce(*this, describeKeyboardNote(notes, index, NoteDetail::Full));
+            return;
+        case Event::Split:
+            a11y::announce(*this, LOC_RAW("Note split") + ", "
+                                      + describeKeyboardNote(notes, index, NoteDetail::Navigation));
+            return;
+        case Event::Merged:
+            a11y::announce(*this, LOC_RAW("Notes merged") + ", "
+                                      + describeKeyboardNote(notes, index, NoteDetail::Navigation));
+            return;
+        case Event::CursorOutsideNote:
+            a11y::announce(*this, LOC_RAW("Cursor is not inside the selected note"));
+            return;
+        case Event::NoAdjacentNote:
+            a11y::announce(*this, LOC_RAW("No adjacent next note"));
             return;
     }
 }

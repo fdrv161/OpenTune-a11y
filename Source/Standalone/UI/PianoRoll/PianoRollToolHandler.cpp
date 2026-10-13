@@ -845,11 +845,14 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     const bool upOrDown = keyCode == juce::KeyPress::upKey || keyCode == juce::KeyPress::downKey;
     const bool isInfoKey = keyCode == 'I' || keyCode == 'i';
     const bool isResetKey = keyCode == 'R' || keyCode == 'r';
+    const bool isSplitKey = keyCode == 'X' || keyCode == 'x';
+    const bool isMergeKey = keyCode == 'J' || keyCode == 'j';
     const bool isHomeOrEnd = keyCode == juce::KeyPress::homeKey || keyCode == juce::KeyPress::endKey;
 
-    // Дополнительные клавиши для работы без мыши (Shift+Вверх/Вниз, Home, End, I, R) не отбирают
+    // Дополнительные клавиши для работы без мыши (Shift+Вверх/Вниз, Home, End, I, R, X, J) не отбирают
     // сочетание, если пользователь назначил его на что-то в настройках горячих клавиш.
-    const bool extraKey = (shiftOnly && upOrDown) || (plain && (isInfoKey || isResetKey || isHomeOrEnd));
+    const bool extraKey = (shiftOnly && upOrDown)
+        || (plain && (isInfoKey || isResetKey || isSplitKey || isMergeKey || isHomeOrEnd));
     if (extraKey
         && KeyShortcutConfig::findShortcutForBinding(ctx_.getShortcutSettings(),
                                                      KeyShortcutConfig::KeyBinding(keyCode, mods))
@@ -867,6 +870,14 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     if (isResetKey) {
         // R — вернуть выбранные ноты на спетую высоту (сбросить правку высоты).
         moveSelectedNotesPitchByKeyboard(0, false, true);
+        return true;
+    }
+    if (isSplitKey) {
+        splitSelectedNoteAtPlayhead();
+        return true;
+    }
+    if (isMergeKey) {
+        mergeSelectedNoteWithNext();
         return true;
     }
 
@@ -961,6 +972,178 @@ void PianoRollToolHandler::notifyKeyboardNote(KeyboardNoteEvent event, const std
 {
     if (ctx_.notifyKeyboardNote)
         ctx_.notifyKeyboardNote(event, notes, index);
+}
+
+std::optional<double> PianoRollToolHandler::playheadSourceTime() const
+{
+    // Та же цепочка, что у pixelXToSourceTime, только от времени курсора, а не от пикселя.
+    if (!ctx_.getPlayheadTimelineSeconds)
+        return std::nullopt;
+    const auto projection = ctx_.getContentProjection();
+    if (!projection.isValid())
+        return std::nullopt;
+    const auto grid = ctx_.getActiveContentTimeGrid();
+    if (!grid)
+        return std::nullopt;
+
+    const PianoRollTimeMap map(projection, *grid, ctx_.getViewMapper());
+    return map.timelineToSource(ctx_.getPlayheadTimelineSeconds());
+}
+
+// X: разрезать выбранную ноту по курсору REAPER. Делает то же, что ножницы мышью
+// (handleScissorsToolUp), но только с выбранной нотой.
+void PianoRollToolHandler::splitSelectedNoteAtPlayhead()
+{
+    const auto beforeNotes = committedNotes(ctx_);
+    if (beforeNotes.empty()) {
+        notifyKeyboardNote(KeyboardNoteEvent::NoNotes, beforeNotes, -1);
+        return;
+    }
+    const auto selected = collectSelectedNoteIndices(beforeNotes);
+    if (selected.empty()) {
+        notifyKeyboardNote(KeyboardNoteEvent::NoSelection, beforeNotes, -1);
+        return;
+    }
+
+    const int index = selected.front();
+    const Note& original = beforeNotes[static_cast<size_t>(index)];
+    const auto splitTime = playheadSourceTime();
+    // Части короче 20 мс не создаём: курсор у самого края ноты — почти наверняка промах.
+    constexpr double kMinPartSeconds = 0.02;
+    if (!splitTime
+        || *splitTime <= original.startTime + kMinPartSeconds
+        || *splitTime >= original.endTime - kMinPartSeconds) {
+        notifyKeyboardNote(KeyboardNoteEvent::CursorOutsideNote, beforeNotes, index);
+        return;
+    }
+
+    Note left = original;
+    Note right = original;
+    left.endTime = *splitTime;
+    left.dirty = true;
+    right.startTime = *splitTime;
+    right.dirty = true;
+
+    // Как у ножниц: центр высоты каждой части — среднее итоговой (исправленной) F0.
+    const auto effectiveF0 = loadEffectiveF0();
+    if (!effectiveF0.empty()) {
+        const auto f0tl = ctx_.getF0Timeline();
+        const float leftAvgF0 = computeAvgF0InRange(f0tl, effectiveF0, original.startTime, *splitTime);
+        if (leftAvgF0 > 0.0f) {
+            left.pitch = leftAvgF0;
+            left.pitchOffset = 0.0f;
+        }
+        const float rightAvgF0 = computeAvgF0InRange(f0tl, effectiveF0, *splitTime, original.endTime);
+        if (rightAvgF0 > 0.0f) {
+            right.pitch = rightAvgF0;
+            right.pitchOffset = 0.0f;
+        }
+    }
+
+    std::vector<Note> newNotes;
+    newNotes.reserve(beforeNotes.size() + 1);
+    for (int i = 0; i < static_cast<int>(beforeNotes.size()); ++i) {
+        if (i == index) {
+            newNotes.push_back(left);
+            newNotes.push_back(right);
+        } else {
+            newNotes.push_back(beforeNotes[static_cast<size_t>(i)]);
+        }
+    }
+
+    if (!ctx_.replaceContentNotesForFullMutation || !ctx_.replaceContentNotesForFullMutation(newNotes))
+        return;
+    if (ctx_.republishPlaybackSource)
+        ctx_.republishPlaybackSource();
+
+    // Выбираем левую часть: стрелка вправо сразу ведёт к правой.
+    ctx_.getState().noteSelection.setSingle(index, static_cast<int>(newNotes.size()));
+    if (ctx_.invalidateSelectionFeedback)
+        ctx_.invalidateSelectionFeedback();
+
+    if (ctx_.pushUndoAction) {
+        ctx_.pushUndoAction(std::make_unique<ScissorsUndoAction>(
+            LOC_RAW("Split note"), beforeNotes, newNotes,
+            ctx_.replaceContentNotesForFullMutation, ctx_.republishPlaybackSource));
+    }
+    notifyKeyboardNote(KeyboardNoteEvent::Split, newNotes, index);
+}
+
+// J: склеить выбранную ноту со следующей, если та стоит вплотную. Как двойной щелчок
+// ножницами по границе (handleScissorsToolMerge).
+void PianoRollToolHandler::mergeSelectedNoteWithNext()
+{
+    const auto beforeNotes = committedNotes(ctx_);
+    if (beforeNotes.empty()) {
+        notifyKeyboardNote(KeyboardNoteEvent::NoNotes, beforeNotes, -1);
+        return;
+    }
+    const auto selected = collectSelectedNoteIndices(beforeNotes);
+    if (selected.empty()) {
+        notifyKeyboardNote(KeyboardNoteEvent::NoSelection, beforeNotes, -1);
+        return;
+    }
+
+    const int index = selected.front();
+    const Note& left = beforeNotes[static_cast<size_t>(index)];
+    int nextIndex = -1;
+    for (int i = 0; i < static_cast<int>(beforeNotes.size()); ++i) {
+        const double startTime = beforeNotes[static_cast<size_t>(i)].startTime;
+        if (startTime > left.startTime
+            && (nextIndex < 0 || startTime < beforeNotes[static_cast<size_t>(nextIndex)].startTime))
+            nextIndex = i;
+    }
+
+    // «Вплотную» — зазор не больше 20 мс; через паузу ноты не склеиваем, как и мышью.
+    constexpr double kTouchToleranceSeconds = 0.02;
+    if (nextIndex < 0
+        || beforeNotes[static_cast<size_t>(nextIndex)].startTime - left.endTime > kTouchToleranceSeconds) {
+        notifyKeyboardNote(KeyboardNoteEvent::NoAdjacentNote, beforeNotes, index);
+        return;
+    }
+
+    const Note& right = beforeNotes[static_cast<size_t>(nextIndex)];
+    Note merged = left;
+    merged.endTime = right.endTime;
+    merged.dirty = true;
+    const auto effectiveF0 = loadEffectiveF0();
+    if (!effectiveF0.empty()) {
+        const float avgF0 = computeAvgF0InRange(ctx_.getF0Timeline(), effectiveF0, left.startTime, right.endTime);
+        if (avgF0 > 0.0f) {
+            merged.pitch = avgF0;
+            merged.pitchOffset = 0.0f;
+        }
+    }
+
+    std::vector<Note> newNotes;
+    newNotes.reserve(beforeNotes.size());
+    int mergedIndex = -1;
+    for (int i = 0; i < static_cast<int>(beforeNotes.size()); ++i) {
+        if (i == nextIndex)
+            continue;
+        if (i == index) {
+            mergedIndex = static_cast<int>(newNotes.size());
+            newNotes.push_back(merged);
+        } else {
+            newNotes.push_back(beforeNotes[static_cast<size_t>(i)]);
+        }
+    }
+
+    if (!ctx_.replaceContentNotesForFullMutation || !ctx_.replaceContentNotesForFullMutation(newNotes))
+        return;
+    if (ctx_.republishPlaybackSource)
+        ctx_.republishPlaybackSource();
+
+    ctx_.getState().noteSelection.setSingle(mergedIndex, static_cast<int>(newNotes.size()));
+    if (ctx_.invalidateSelectionFeedback)
+        ctx_.invalidateSelectionFeedback();
+
+    if (ctx_.pushUndoAction) {
+        ctx_.pushUndoAction(std::make_unique<ScissorsUndoAction>(
+            LOC_RAW("Merge notes"), beforeNotes, newNotes,
+            ctx_.replaceContentNotesForFullMutation, ctx_.republishPlaybackSource));
+    }
+    notifyKeyboardNote(KeyboardNoteEvent::Merged, newNotes, mergedIndex);
 }
 
 void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool fineCents, bool resetToSung)
