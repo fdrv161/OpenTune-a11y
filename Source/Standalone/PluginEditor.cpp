@@ -713,6 +713,7 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
     });
     pianoRoll_.setContentCommands(processorRef_.getContentCommands());
     pianoRoll_.setPianoKeyAudition(&processorRef_.getPianoKeyAudition());
+    pianoRoll_.setNoteAudition(&processorRef_.getNoteAudition());
     {
         const int activeTrack = getStandaloneActiveTrack(processorRef_);
         const int placementIndex = getStandaloneSelectedPlacementIndex(processorRef_, activeTrack);

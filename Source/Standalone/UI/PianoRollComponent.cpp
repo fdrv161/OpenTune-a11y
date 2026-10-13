@@ -22,6 +22,9 @@
 #include "../../Utils/ScaleUiMapping.h"
 #include "../../Utils/PitchUtils.h"
 #include "Utils/PianoKeyAudition.h"
+#include "Utils/NoteAudition.h"
+#include "Utils/NoteSpeech.h"
+#include "Utils/ScreenReaderAnnouncer.h"
 #include "TimelineViewportPolicy.h"
 #include "TimelineLayerComposer.h"
 #include "PianoRoll/PianoRollTimeMap.h"
@@ -210,6 +213,10 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
     toolCtx.notifyEscapeKey = [this]() { listeners_.call([](Listener& l) { l.escapeKeyPressed(); }); };
     toolCtx.notifyNoteOffsetChanged = [this](size_t noteIndex, float oldOffset, float newOffset) {
         listeners_.call([noteIndex, oldOffset, newOffset](Listener& l) { l.noteOffsetChanged(noteIndex, oldOffset, newOffset); });
+    };
+    toolCtx.notifyKeyboardNote = [this](PianoRollToolHandler::KeyboardNoteEvent event,
+                                        const std::vector<Note>& notes, int index) {
+        handleKeyboardNote(event, notes, index);
     };
     toolCtx.getPianoKeyWidth = [this]() { return getTimelineContentStartX(); };
     toolCtx.getContentProjection = [this]() { return activeContentProjection(); };
@@ -694,6 +701,8 @@ PianoRollComponent::PianoRollComponent(const PlayHeadState& playHeadState,
     overlay_ = std::make_unique<PianoRollOverlayComponent>(*this);
     addAndMakeVisible(*overlay_);
     overlay_->setInterceptsMouseClicks(false, false);
+    // Слой только рисует поверх нот: скринридеру он не нужен.
+    overlay_->setAccessible(false);
 }
 
 PianoRollComponent::~PianoRollComponent() {
@@ -5627,6 +5636,125 @@ ViewMapper PianoRollComponent::makeViewMapperForView(const ViewportState& view) 
         view.verticalScrollOffset,
         maxMidi_
     };
+}
+
+// ============================================================================
+// Доступность: окно нот для скринридера, озвучка и прослушивание нот с клавиатуры
+// ============================================================================
+
+std::unique_ptr<juce::AccessibilityHandler> PianoRollComponent::createAccessibilityHandler()
+{
+    // Заголовок считается при каждом запросе: NVDA+Стрелка вверх читает текущую ноту
+    // без таймеров и лишних событий.
+    class NotesAccessibilityHandler final : public juce::AccessibilityHandler {
+    public:
+        explicit NotesAccessibilityHandler(PianoRollComponent& owner)
+            : juce::AccessibilityHandler(owner, juce::AccessibilityRole::list), owner_(owner) {}
+
+        juce::String getTitle() const override
+        {
+            juce::String title = LOC_RAW("Notes");
+            const auto& selected = owner_.interactionState_.noteSelection.selectedIndices;
+            if (selected.size() == 1) {
+                const auto line = owner_.describeKeyboardNote(owner_.getCommittedNotes(), selected.front(),
+                                                              PianoRollComponent::NoteDetail::Navigation);
+                if (line.isNotEmpty())
+                    title << ", " << line;
+            }
+            return title;
+        }
+
+    private:
+        PianoRollComponent& owner_;
+    };
+
+    return std::make_unique<NotesAccessibilityHandler>(*this);
+}
+
+juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& notes, int index,
+                                                      NoteDetail detail) const
+{
+    if (index < 0 || index >= static_cast<int>(notes.size()))
+        return {};
+
+    const auto& note = notes[static_cast<size_t>(index)];
+    // originalPitch — спетая высота; у старых проектов и нарисованных нот её может не быть.
+    const float sungHz = note.originalPitch > 0.0f ? note.originalPitch : note.pitch;
+    if (sungHz <= 0.0f)
+        return {};
+
+    const float sungMidi = PitchUtils::freqToMidi(sungHz);
+    const float targetMidi = note.pitch > 0.0f ? PitchUtils::freqToMidi(note.pitch) + note.pitchOffset
+                                               : sungMidi;
+    const std::string sharpWord = LOC_RAW("sharp").toStdString();
+    const auto text = [&sharpWord](float midi) {
+        return juce::String::fromUTF8(NoteSpeech::describeMidi(midi, sharpWord).c_str());
+    };
+
+    if (detail == NoteDetail::Target)
+        return text(targetMidi);
+
+    if (detail == NoteDetail::Navigation) {
+        // Цель называем, только если она не ближайшая к спетой ровная нота: иначе это лишние слова.
+        const auto sungParts = NoteSpeech::splitMidi(sungMidi);
+        const auto targetParts = NoteSpeech::splitMidi(targetMidi);
+        juce::String line = text(sungMidi);
+        if (targetParts.midi != sungParts.midi || targetParts.cents != 0)
+            line << ", " << Loc::format(LOC_RAW("target {0}"), text(targetMidi));
+        return line;
+    }
+
+    // Номер по времени начала, а не по положению в массиве.
+    int ordinal = 1;
+    for (const auto& other : notes)
+        if (other.startTime < note.startTime)
+            ++ordinal;
+
+    juce::String line = Loc::format(LOC_RAW("Note {0} of {1}"),
+                                    juce::String(ordinal), juce::String(static_cast<int>(notes.size())));
+    line << ", " << Loc::format(LOC_RAW("sung {0}"), text(sungMidi))
+         << ", " << Loc::format(LOC_RAW("target {0}"), text(targetMidi))
+         << ", " << Loc::format(LOC_RAW("start {0} s, length {1} s"),
+                                juce::String(note.startTime, 2), juce::String(note.getDuration(), 2));
+    return line;
+}
+
+void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEvent event,
+                                            const std::vector<Note>& notes, int index)
+{
+    using Event = PianoRollToolHandler::KeyboardNoteEvent;
+    switch (event) {
+        case Event::NoNotes:
+            a11y::announce(*this, LOC_RAW("No notes"));
+            return;
+        case Event::NoSelection:
+            a11y::announce(*this, LOC_RAW("No note selected"));
+            return;
+        case Event::Selected:
+            a11y::announce(*this, describeKeyboardNote(notes, index, NoteDetail::Navigation));
+            if (index >= 0 && index < static_cast<int>(notes.size()))
+                auditionNote(notes[static_cast<size_t>(index)]);
+            return;
+        case Event::PitchMoved:
+            // После сдвига важна только новая высота.
+            a11y::announce(*this, describeKeyboardNote(notes, index, NoteDetail::Target));
+            return;
+        case Event::Info:
+            a11y::announce(*this, describeKeyboardNote(notes, index, NoteDetail::Full));
+            return;
+    }
+}
+
+void PianoRollComponent::auditionNote(const Note& note)
+{
+    if (noteAudition_ == nullptr || audioBuffer_ == nullptr || audioBufferSampleRate_ <= 0.0)
+        return;
+
+    // Время нот — во времени исходного аудио, поэтому индекс в буфере считается напрямую.
+    const double sampleRate = audioBufferSampleRate_;
+    const int startSample = static_cast<int>(std::llround(note.startTime * sampleRate));
+    const int numSamples = static_cast<int>(std::llround(note.getDuration() * sampleRate));
+    noteAudition_->play(*audioBuffer_, sampleRate, startSample, numSamples);
 }
 
 } // namespace OpenTune

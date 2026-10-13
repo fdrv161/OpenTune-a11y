@@ -88,6 +88,16 @@ public:
         PitchCorrectionSegment::ParameterSnapshot parameterSnapshot;
     };
 
+    // Что произошло с нотой при работе с клавиатуры — для озвучки и прослушивания.
+    enum class KeyboardNoteEvent
+    {
+        Selected,    // перешли на ноту стрелкой, Home или End
+        PitchMoved,  // сдвинули высоту стрелкой вверх/вниз
+        Info,        // запросили полную информацию (клавиша I)
+        NoNotes,     // нот нет совсем
+        NoSelection  // ноты есть, но ни одна не выбрана
+    };
+
     // PianoRoll 组件提供的回调上下文。
     // 所有数据读写均通过这些 std::function 回调完成，
     // 使 ToolHandler 可独立于具体组件实例进行测试。
@@ -180,6 +190,8 @@ public:
         std::function<void()> notifyStopPlayback;
         std::function<void()> notifyEscapeKey;
         std::function<void(size_t, float, float)> notifyNoteOffsetChanged;
+        // notes — актуальный список (после сдвига — уже с новой высотой), index — нота или -1.
+        std::function<void(KeyboardNoteEvent, const std::vector<Note>&, int)> notifyKeyboardNote;
 
         // === EQ Tool ===
         // 打开 EQ 弹窗预览：参数为主音符 index（纯点击 = mouseDown 记录的 pending
@@ -306,7 +318,9 @@ private:
     // §8.4: Delete key removes selected handle (non-endpoint).
     bool handleTimeToolDeleteSelected();
     bool handleNoteArrowKey(const juce::KeyPress& key);
-    void moveSelectedNotesPitchByKeyboard(int direction);
+    void moveSelectedNotesPitchByKeyboard(int direction, bool fineCents = false);
+    void selectNoteFromKeyboard(const std::vector<Note>& notes, int index);
+    void notifyKeyboardNote(KeyboardNoteEvent event, const std::vector<Note>& notes, int index);
     // Hit-test handles within ±5 px of a TimeGrid handle's output_seconds.
     // Returns 0 if no hit.
     uint64_t hitTestTimeGridHandle(const juce::MouseEvent& e) const;

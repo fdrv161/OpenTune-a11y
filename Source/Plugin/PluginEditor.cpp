@@ -182,6 +182,7 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
 
     // Piano key audition
     pianoRoll_.setPianoKeyAudition(&processorRef_.getPianoKeyAudition());
+    pianoRoll_.setNoteAudition(&processorRef_.getNoteAudition());
 
     // Menu popup callbacks — MenuBarComponent stays hidden, provides menu content
     // via TransportBar icon buttons (File/Edit/View)
@@ -283,6 +284,19 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
     }
 
     grabKeyboardFocus();
+
+    // Доступность: сразу ставим фокус в окно нот, чтобы стрелки работали без Tab.
+    // С задержкой — в конструкторе редактор ещё не на экране. Обучение при первом
+    // запуске управляет фокусом само.
+    juce::Component::SafePointer<OpenTuneAudioProcessorEditor> safeThis(this);
+    juce::Timer::callAfterDelay(150, [safeThis] {
+        if (safeThis == nullptr)
+            return;
+        if (safeThis->onboardingOverlay_ != nullptr && safeThis->onboardingOverlay_->isActive())
+            return;
+        if (safeThis->pianoRoll_.isShowing())
+            safeThis->pianoRoll_.grabKeyboardFocus();
+    });
 }
 
 OpenTuneAudioProcessorEditor::~OpenTuneAudioProcessorEditor()

@@ -56,6 +56,7 @@
 namespace OpenTune {
 
 class PianoKeyAudition;
+class NoteAudition;
 class AppPreferences;
 struct PlayHeadState;
 
@@ -149,6 +150,8 @@ public:
     void onNotesRevisionChanged();
     void onPitchRevisionChanged();
     void setPianoKeyAudition(PianoKeyAudition* audition) { pianoKeyAudition_ = audition; }
+    void setNoteAudition(NoteAudition* audition) { noteAudition_ = audition; }
+    std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
     /** 注入 AppPreferences 指针（两个 Editor 构造/同步时直接注入，无中转层）。
      *  用于 EQ popup 和音符整体移动吸附偏好。 */
@@ -682,6 +685,13 @@ private:
     static constexpr int dragThreshold_ = 5;
     
     PianoKeyAudition* pianoKeyAudition_ = nullptr;
+    NoteAudition* noteAudition_ = nullptr;
+
+    // Доступность: озвучка ноты, выбранной с клавиатуры, и прослушивание её вокала.
+    void handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEvent event, const std::vector<Note>& notes, int index);
+    enum class NoteDetail { Navigation, Target, Full };
+    juce::String describeKeyboardNote(const std::vector<Note>& notes, int index, NoteDetail detail) const;
+    void auditionNote(const Note& note);
     int pressedPianoKey_ = -1;
 
     std::unique_ptr<juce::VBlankAttachment> scrollVBlankAttachment_;

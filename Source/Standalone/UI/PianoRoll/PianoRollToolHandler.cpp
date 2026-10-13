@@ -838,21 +838,76 @@ bool PianoRollToolHandler::keyPressed(const juce::KeyPress& key,
 
 bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
 {
-    if (key.getModifiers().isAnyModifierKeyDown())
+    const auto mods = key.getModifiers();
+    const int keyCode = key.getKeyCode();
+    const bool plain = !mods.isAnyModifierKeyDown();
+    const bool shiftOnly = mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown();
+    const bool upOrDown = keyCode == juce::KeyPress::upKey || keyCode == juce::KeyPress::downKey;
+    const bool isInfoKey = keyCode == 'I' || keyCode == 'i';
+    const bool isHomeOrEnd = keyCode == juce::KeyPress::homeKey || keyCode == juce::KeyPress::endKey;
+
+    // Дополнительные клавиши для работы без мыши (Shift+Вверх/Вниз, Home, End, I) не отбирают
+    // сочетание, если пользователь назначил его на что-то в настройках горячих клавиш.
+    const bool extraKey = (shiftOnly && upOrDown) || (plain && (isInfoKey || isHomeOrEnd));
+    if (extraKey
+        && KeyShortcutConfig::findShortcutForBinding(ctx_.getShortcutSettings(),
+                                                     KeyShortcutConfig::KeyBinding(keyCode, mods))
+               != KeyShortcutConfig::ShortcutId::Count)
         return false;
 
-    const int keyCode = key.getKeyCode();
-    if (keyCode == juce::KeyPress::upKey || keyCode == juce::KeyPress::downKey) {
-        moveSelectedNotesPitchByKeyboard(keyCode == juce::KeyPress::upKey ? 1 : -1);
+    if (upOrDown && (plain || shiftOnly)) {
+        // Shift — точная подстройка на 1 цент.
+        moveSelectedNotesPitchByKeyboard(keyCode == juce::KeyPress::upKey ? 1 : -1, shiftOnly);
         return true;
     }
-    if (keyCode != juce::KeyPress::leftKey && keyCode != juce::KeyPress::rightKey)
+    if (!plain)
         return false;
 
     const auto& notes = committedNotes(ctx_);
-    const auto selectedIndices = collectSelectedNoteIndices(notes);
-    if (selectedIndices.empty())
+    const int noteCount = static_cast<int>(notes.size());
+
+    if (isInfoKey) {
+        const auto selected = collectSelectedNoteIndices(notes);
+        if (noteCount == 0)
+            notifyKeyboardNote(KeyboardNoteEvent::NoNotes, notes, -1);
+        else if (selected.empty())
+            notifyKeyboardNote(KeyboardNoteEvent::NoSelection, notes, -1);
+        else
+            notifyKeyboardNote(KeyboardNoteEvent::Info, notes, selected.front());
         return true;
+    }
+
+    if (!isHomeOrEnd && keyCode != juce::KeyPress::leftKey && keyCode != juce::KeyPress::rightKey)
+        return false;
+
+    if (noteCount == 0) {
+        notifyKeyboardNote(KeyboardNoteEvent::NoNotes, notes, -1);
+        return true;
+    }
+
+    // Первая и последняя нота по времени начала. Порядок в массиве не используем как время.
+    const auto edgeNote = [&notes, noteCount](bool last) {
+        int edge = 0;
+        for (int index = 1; index < noteCount; ++index) {
+            const double startTime = notes[static_cast<size_t>(index)].startTime;
+            const double edgeTime = notes[static_cast<size_t>(edge)].startTime;
+            if (last ? startTime > edgeTime : startTime < edgeTime)
+                edge = index;
+        }
+        return edge;
+    };
+
+    if (isHomeOrEnd) {
+        selectNoteFromKeyboard(notes, edgeNote(keyCode == juce::KeyPress::endKey));
+        return true;
+    }
+
+    const auto selectedIndices = collectSelectedNoteIndices(notes);
+    if (selectedIndices.empty()) {
+        // Без выбранной ноты стрелки раньше молчали; без мыши ноту было не выбрать.
+        selectNoteFromKeyboard(notes, edgeNote(false));
+        return true;
+    }
 
     const bool moveRight = keyCode == juce::KeyPress::rightKey;
     double boundaryTime = notes[static_cast<size_t>(selectedIndices.front())].startTime;
@@ -874,20 +929,35 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
         }
     }
 
-    if (adjacentIndex >= 0) {
-        ctx_.getState().noteSelection.setSingle(adjacentIndex, static_cast<int>(notes.size()));
-        if (ctx_.invalidateSelectionFeedback)
-            ctx_.invalidateSelectionFeedback();
-    }
+    // На краю списка — тишина.
+    if (adjacentIndex >= 0)
+        selectNoteFromKeyboard(notes, adjacentIndex);
     return true;
 }
 
-void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction)
+void PianoRollToolHandler::selectNoteFromKeyboard(const std::vector<Note>& notes, int index)
+{
+    ctx_.getState().noteSelection.setSingle(index, static_cast<int>(notes.size()));
+    if (ctx_.invalidateSelectionFeedback)
+        ctx_.invalidateSelectionFeedback();
+    notifyKeyboardNote(KeyboardNoteEvent::Selected, notes, index);
+}
+
+void PianoRollToolHandler::notifyKeyboardNote(KeyboardNoteEvent event, const std::vector<Note>& notes, int index)
+{
+    if (ctx_.notifyKeyboardNote)
+        ctx_.notifyKeyboardNote(event, notes, index);
+}
+
+void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool fineCents)
 {
     const auto& notes = committedNotes(ctx_);
     const auto selectedIndices = collectSelectedNoteIndices(notes);
-    if (selectedIndices.empty())
+    if (selectedIndices.empty()) {
+        notifyKeyboardNote(notes.empty() ? KeyboardNoteEvent::NoNotes : KeyboardNoteEvent::NoSelection,
+                           notes, -1);
         return;
+    }
 
     const bool openDyne = AudioEditingScheme::usesNotesPrimaryScheme(ctx_.getAudioEditingScheme());
     const bool standardPitch = !openDyne
@@ -911,7 +981,7 @@ void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction)
         const float initialOffset = note.pitchOffset;
         const float currentMidi = baseMidi + initialOffset;
         float targetMidi = currentMidi;
-        if (noSnap) {
+        if (noSnap || fineCents) {
             targetMidi += static_cast<float>(direction) * 0.01f;
         } else if (scaleSnapEnabled) {
             const float firstCandidate = direction > 0
@@ -963,6 +1033,8 @@ void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction)
         ctx_.notifyNoteOffsetChanged(static_cast<size_t>(noteIndex), oldOffset,
                                      workingNotes[static_cast<size_t>(noteIndex)].pitchOffset);
     }
+    // workingNotes, а не committedNotes: там гарантированно уже новая высота.
+    notifyKeyboardNote(KeyboardNoteEvent::PitchMoved, workingNotes, changedOffsets.front().first);
 }
 
 bool PianoRollToolHandler::isEmptySpaceMouseDown(const juce::MouseEvent& e)
