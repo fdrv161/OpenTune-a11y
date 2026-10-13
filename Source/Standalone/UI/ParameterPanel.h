@@ -38,6 +38,8 @@ public:
     {
         auto* label = OpenTuneLookAndFeel::createSliderTextBox(slider);
         label->setFont(UIColors::getLabelFont(14.0f));
+        // Поле значения пересоздаётся при смене оформления: сохраняем имя ручки для скринридера.
+        label->setTitle(slider.getTitle());
         return label;
     }
 
@@ -155,6 +157,7 @@ private:
     void setupHeader(juce::Label& label, const juce::String& text);
     void setupLabel(juce::Label& label, const juce::String& text);
     void setupLargeKnob(juce::Slider& slider, double min, double max, double defaultVal, const juce::String& suffix);
+    void applyAccessibilityTitles();
 
     /** 以内容组件本地坐标排布全部控件；返回由实际布局 bottom + 底部内边距得出的内容高度。 */
     int layoutContent(int width);

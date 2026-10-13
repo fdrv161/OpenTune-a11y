@@ -614,6 +614,46 @@ ParameterPanel::ParameterPanel()
     // 滚轮调参：ComboBox 在 JUCE 中默认关闭，此处显式开启；鼠标在控件上时事件被其消费，Viewport 不滚
     pitchGridSelector_.setScrollWheelEnabled(true);
     contentComponent_.addChildComponent(pitchGridSelector_);
+
+    // Доступность: прокручиваемая область сама по себе принимала фокус по Tab и звучала
+    // в NVDA как «unknown». Элементы внутри неё остаются доступны по Tab.
+    viewport_.setWantsKeyboardFocus(false);
+    applyAccessibilityTitles();
+}
+
+// Имена для скринридера: подписи над ручками — отдельные Label, поэтому сами поля значений
+// и кнопки инструментов (у них внутренние имена вроде PitchModulation) звучали без названия.
+void ParameterPanel::applyAccessibilityTitles()
+{
+    const auto titleKnob = [](juce::Slider& slider, const juce::String& title) {
+        slider.setTitle(title);
+        // Поле значения — дочерний Label ручки; именно оно получает фокус по Tab.
+        for (auto* child : slider.getChildren())
+            if (auto* valueBox = dynamic_cast<juce::Label*>(child))
+                valueBox->setTitle(title);
+    };
+    titleKnob(retuneSpeedSlider_, LOC(kRetuneSpeed));
+    titleKnob(vibratoDepthSlider_, LOC(kVibratoDepth));
+    titleKnob(vibratoRateSlider_, LOC(kVibratoRate));
+    titleKnob(noteSplitSlider_, LOC(kNoteSplit));
+
+    const auto titleButton = [](const std::unique_ptr<ToolIconButton>& button, const juce::String& title) {
+        if (button != nullptr)
+            button->setTitle(title);
+    };
+    titleButton(selectToolButton_, LOC(kToolODSelect));
+    titleButton(drawNoteToolButton_, LOC(kTooltipDrawNote));
+    titleButton(lineAnchorToolButton_, LOC(kTooltipLineAnchor));
+    titleButton(handDrawToolButton_, LOC(kTooltipHandDraw));
+    titleButton(eraserToolButton_, LOC(kEraser));
+    titleButton(timeToolButton_, LOC_RAW("Time tool"));
+    titleButton(pitchToolButton_, LOC(kToolODPitch));
+    titleButton(pitchModulationToolButton_, LOC(kToolODPitchModulation));
+    titleButton(pitchDriftToolButton_, LOC(kToolODPitchDrift));
+    titleButton(volumeEnvelopeToolButton_, LOC(kToolODVolumeEnvelope));
+    titleButton(scissorsToolButton_, LOC(kToolODScissors));
+
+    pitchGridSelector_.setTitle(LOC_RAW("Pitch snap"));
 }
 
 ParameterPanel::~ParameterPanel()
@@ -900,6 +940,8 @@ void ParameterPanel::applyTheme()
 
 void ParameterPanel::refreshLocalizedText()
 {
+    applyAccessibilityTitles();
+
     // 更新 Pitch Correction 部分
     pitchCorrectionHeader_.setText(LOC(kPitchCorrection), juce::dontSendNotification);
     retuneSpeedLabel_.setText(LOC(kRetuneSpeed), juce::dontSendNotification);

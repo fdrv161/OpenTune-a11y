@@ -1205,6 +1205,10 @@ TransportBarComponent::TransportBarComponent()
     scaleTypeSelector_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(scaleTypeSelector_);
 
+    // Доступность: без имени NVDA читал только значение («combo box C»).
+    scaleRootSelector_.setTitle(LOC(kRootNote));
+    scaleTypeSelector_.setTitle(LOC(kScale));
+
     applyTheme();
 }
 
@@ -1214,6 +1218,9 @@ TransportBarComponent::~TransportBarComponent()
 
 void TransportBarComponent::refreshLocalizedText()
 {
+    scaleRootSelector_.setTitle(LOC(kRootNote));
+    scaleTypeSelector_.setTitle(LOC(kScale));
+
     // 刷新所有按钮的 tooltip
     fileButton_.setTooltip(LOC(kTooltipFile));
     editButton_.setTooltip(LOC(kTooltipEdit));
