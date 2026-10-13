@@ -707,6 +707,8 @@ PianoRollComponent::PianoRollComponent(const PlayHeadState& playHeadState,
     overlay_->setInterceptsMouseClicks(false, false);
     // Слой только рисует поверх нот: скринридеру он не нужен.
     overlay_->setAccessible(false);
+    // Вертикальная прокрутка — только мышью; NVDA читал её как «scroll bar 0».
+    verticalScrollBar_.setAccessible(false);
 }
 
 PianoRollComponent::~PianoRollComponent() {

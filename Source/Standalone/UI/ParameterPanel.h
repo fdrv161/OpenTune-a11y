@@ -38,8 +38,13 @@ public:
     {
         auto* label = OpenTuneLookAndFeel::createSliderTextBox(slider);
         label->setFont(UIColors::getLabelFont(14.0f));
-        // Поле значения пересоздаётся при смене оформления: сохраняем имя ручки для скринридера.
-        label->setTitle(slider.getTitle());
+        // По Tab фокус получает поле ввода, которое Label открывает, а у него нет имени
+        // (NVDA: «edit selected 15.00%»). Даём полю имя ручки в момент открытия.
+        juce::Component::SafePointer<juce::Slider> safeSlider(&slider);
+        label->onEditorShow = [label, safeSlider] {
+            if (auto* editor = label->getCurrentTextEditor())
+                editor->setTitle(safeSlider != nullptr ? safeSlider->getTitle() : juce::String());
+        };
         return label;
     }
 

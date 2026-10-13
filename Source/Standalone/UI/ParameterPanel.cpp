@@ -618,6 +618,14 @@ ParameterPanel::ParameterPanel()
     // Доступность: прокручиваемая область сама по себе принимала фокус по Tab и звучала
     // в NVDA как «unknown». Элементы внутри неё остаются доступны по Tab.
     viewport_.setWantsKeyboardFocus(false);
+    // Полосы прокрутки работают только мышью, а NVDA читал их как «scroll bar 0».
+    viewport_.getVerticalScrollBar().setAccessible(false);
+    viewport_.getHorizontalScrollBar().setAccessible(false);
+    // Надписи над ручками и заголовки разделов: JUCE отдаёт текст надписи и как имя, и как
+    // значение, поэтому NVDA читал их дважды. Имена ручек теперь у самих ручек.
+    for (auto* caption : { &pitchCorrectionHeader_, &retuneSpeedLabel_, &vibratoDepthLabel_,
+                           &vibratoRateLabel_, &noteSplitLabel_, &toolsHeader_ })
+        caption->setAccessible(false);
     applyAccessibilityTitles();
 }
 
@@ -625,17 +633,11 @@ ParameterPanel::ParameterPanel()
 // и кнопки инструментов (у них внутренние имена вроде PitchModulation) звучали без названия.
 void ParameterPanel::applyAccessibilityTitles()
 {
-    const auto titleKnob = [](juce::Slider& slider, const juce::String& title) {
-        slider.setTitle(title);
-        // Поле значения — дочерний Label ручки; именно оно получает фокус по Tab.
-        for (auto* child : slider.getChildren())
-            if (auto* valueBox = dynamic_cast<juce::Label*>(child))
-                valueBox->setTitle(title);
-    };
-    titleKnob(retuneSpeedSlider_, LOC(kRetuneSpeed));
-    titleKnob(vibratoDepthSlider_, LOC(kVibratoDepth));
-    titleKnob(vibratoRateSlider_, LOC(kVibratoRate));
-    titleKnob(noteSplitSlider_, LOC(kNoteSplit));
+    // Имя ручки берёт и поле ввода значения (см. LargeKnobLookAndFeel::createSliderTextBox).
+    retuneSpeedSlider_.setTitle(LOC(kRetuneSpeed));
+    vibratoDepthSlider_.setTitle(LOC(kVibratoDepth));
+    vibratoRateSlider_.setTitle(LOC(kVibratoRate));
+    noteSplitSlider_.setTitle(LOC(kNoteSplit));
 
     const auto titleButton = [](const std::unique_ptr<ToolIconButton>& button, const juce::String& title) {
         if (button != nullptr)
