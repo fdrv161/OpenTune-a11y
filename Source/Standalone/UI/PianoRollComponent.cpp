@@ -25,6 +25,8 @@
 #include "Utils/NoteAudition.h"
 #include "Utils/NoteSpeech.h"
 #include "Utils/ScreenReaderAnnouncer.h"
+#include "Utils/TimeCoordinate.h"
+#include "Inference/RenderCache.h"
 #include "TimelineViewportPolicy.h"
 #include "TimelineLayerComposer.h"
 #include "PianoRoll/PianoRollTimeMap.h"
@@ -5695,11 +5697,12 @@ juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& n
         return text(targetMidi);
 
     if (detail == NoteDetail::Navigation) {
-        // Цель называем, только если она не ближайшая к спетой ровная нота: иначе это лишние слова.
+        // Цель не называем только у нетронутой ноты (цель совпадает со спетым до цента):
+        // так на слух сразу понятно, какие ноты уже исправлены.
         const auto sungParts = NoteSpeech::splitMidi(sungMidi);
         const auto targetParts = NoteSpeech::splitMidi(targetMidi);
         juce::String line = text(sungMidi);
-        if (targetParts.midi != sungParts.midi || targetParts.cents != 0)
+        if (targetParts.midi != sungParts.midi || targetParts.cents != sungParts.cents)
             line << ", " << Loc::format(LOC_RAW("target {0}"), text(targetMidi));
         return line;
     }
@@ -5731,13 +5734,16 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             a11y::announce(*this, LOC_RAW("No note selected"));
             return;
         case Event::Selected:
+            if (pendingAuditionTimer_ != nullptr)
+                pendingAuditionTimer_->stopTimer();
             a11y::announce(*this, describeKeyboardNote(notes, index, NoteDetail::Navigation));
             if (index >= 0 && index < static_cast<int>(notes.size()))
                 auditionNote(notes[static_cast<size_t>(index)]);
             return;
         case Event::PitchMoved:
-            // После сдвига важна только новая высота.
+            // После сдвига важна только новая высота; звук — когда пересчитается коррекция.
             a11y::announce(*this, describeKeyboardNote(notes, index, NoteDetail::Target));
+            scheduleAuditionAfterRender(index);
             return;
         case Event::Info:
             a11y::announce(*this, describeKeyboardNote(notes, index, NoteDetail::Full));
@@ -5752,9 +5758,73 @@ void PianoRollComponent::auditionNote(const Note& note)
 
     // Время нот — во времени исходного аудио, поэтому индекс в буфере считается напрямую.
     const double sampleRate = audioBufferSampleRate_;
-    const int startSample = static_cast<int>(std::llround(note.startTime * sampleRate));
-    const int numSamples = static_cast<int>(std::llround(note.getDuration() * sampleRate));
-    noteAudition_->play(*audioBuffer_, sampleRate, startSample, numSamples);
+    const int totalSamples = audioBuffer_->getNumSamples();
+    const int startSample = juce::jlimit(0, totalSamples,
+                                         static_cast<int>(std::llround(note.startTime * sampleRate)));
+    int numSamples = juce::jlimit(0, totalSamples - startSample,
+                                  static_cast<int>(std::llround(note.getDuration() * sampleRate)));
+    numSamples = juce::jmin(numSamples, static_cast<int>(NoteAudition::kMaxDurationSeconds * sampleRate));
+    if (numSamples <= 0)
+        return;
+
+    // Как при экспорте: исходный вокал, поверх — уже рассчитанная коррекция, если она готова.
+    // Рассчитанный звук хранится на частоте рендера, поэтому накладываем только при совпадении частот.
+    juce::AudioBuffer<float> segment(audioBuffer_->getNumChannels(), numSamples);
+    for (int channel = 0; channel < segment.getNumChannels(); ++channel)
+        segment.copyFrom(channel, 0, *audioBuffer_, channel, startSample, numSamples);
+
+    if (renderCacheProvider_ != nullptr && editedContentKey_.isValid()
+        && std::abs(sampleRate - TimeCoordinate::kRenderSampleRate) < 1.0) {
+        if (const auto cache = renderCacheProvider_(editedContentKey_))
+            cache->overlayCanonicalAudio(segment, 0, numSamples, startSample);
+    }
+
+    noteAudition_->play(segment, sampleRate, 0, numSamples);
+}
+
+namespace {
+// Таймер с обработчиком-лямбдой: PianoRollComponent сам Timer не наследует.
+class CallbackTimer final : public juce::Timer {
+public:
+    explicit CallbackTimer(std::function<void()> callback) : callback_(std::move(callback)) {}
+    void timerCallback() override { callback_(); }
+
+private:
+    std::function<void()> callback_;
+};
+} // namespace
+
+void PianoRollComponent::scheduleAuditionAfterRender(int noteIndex)
+{
+    pendingAuditionNoteIndex_ = noteIndex;
+    pendingAuditionTicks_ = 0;
+    if (pendingAuditionTimer_ == nullptr)
+        pendingAuditionTimer_ = std::make_unique<CallbackTimer>([this] { tickPendingAudition(); });
+    // Каждый новый сдвиг перезапускает ожидание: при быстрых нажатиях звучит только итог.
+    pendingAuditionTimer_->startTimer(150);
+}
+
+void PianoRollComponent::tickPendingAudition()
+{
+    ++pendingAuditionTicks_;
+
+    bool settled = true;
+    if (renderCacheProvider_ != nullptr && editedContentKey_.isValid()) {
+        if (const auto cache = renderCacheProvider_(editedContentKey_))
+            settled = cache->isCanonicalSettled();
+    }
+
+    // Первые 2 тика ждём в любом случае: рендер мог ещё не успеть встать в очередь.
+    // Дольше ~5 секунд не ждём — играем то, что есть.
+    constexpr int kMinTicks = 2;
+    constexpr int kMaxTicks = 35;
+    if (pendingAuditionTicks_ < kMinTicks || (!settled && pendingAuditionTicks_ < kMaxTicks))
+        return;
+
+    pendingAuditionTimer_->stopTimer();
+    const auto& notes = getCommittedNotes();
+    if (pendingAuditionNoteIndex_ >= 0 && pendingAuditionNoteIndex_ < static_cast<int>(notes.size()))
+        auditionNote(notes[static_cast<size_t>(pendingAuditionNoteIndex_)]);
 }
 
 } // namespace OpenTune

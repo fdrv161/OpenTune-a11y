@@ -57,6 +57,7 @@ namespace OpenTune {
 
 class PianoKeyAudition;
 class NoteAudition;
+class RenderCache;
 class AppPreferences;
 struct PlayHeadState;
 
@@ -151,6 +152,9 @@ public:
     void onPitchRevisionChanged();
     void setPianoKeyAudition(PianoKeyAudition* audition) { pianoKeyAudition_ = audition; }
     void setNoteAudition(NoteAudition* audition) { noteAudition_ = audition; }
+    /** Доступ к уже исправленному звуку контента — для прослушивания ноты с клавиатуры. */
+    using RenderCacheProvider = std::function<std::shared_ptr<const RenderCache>(ContentKey)>;
+    void setRenderCacheProvider(RenderCacheProvider provider) { renderCacheProvider_ = std::move(provider); }
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
     /** 注入 AppPreferences 指针（两个 Editor 构造/同步时直接注入，无中转层）。
@@ -692,6 +696,12 @@ private:
     enum class NoteDetail { Navigation, Target, Full };
     juce::String describeKeyboardNote(const std::vector<Note>& notes, int index, NoteDetail detail) const;
     void auditionNote(const Note& note);
+    void scheduleAuditionAfterRender(int noteIndex);
+    void tickPendingAudition();
+    RenderCacheProvider renderCacheProvider_;
+    std::unique_ptr<juce::Timer> pendingAuditionTimer_;
+    int pendingAuditionNoteIndex_ = -1;
+    int pendingAuditionTicks_ = 0;
     int pressedPianoKey_ = -1;
 
     std::unique_ptr<juce::VBlankAttachment> scrollVBlankAttachment_;
