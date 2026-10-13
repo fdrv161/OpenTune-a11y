@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "Utils/LocalizationManager.h"
+#include "Utils/ScreenReaderAnnouncer.h"
 #include "Standalone/UI/AuroraLookAndFeel.h"
 #include "Standalone/UI/OpenTuneLookAndFeel.h"
 #include "Standalone/UI/UIColors.h"
@@ -20,6 +21,11 @@ public:
     explicit ScrollablePage(std::unique_ptr<juce::Component> content, int contentHeight)
     {
         setScrollBarThickness(8);
+        // Доступность: сама прокручиваемая область брала фокус по Tab (NVDA: «unknown»),
+        // а полосы прокрутки работают только мышью. Элементы страницы остаются доступны.
+        setWantsKeyboardFocus(false);
+        getVerticalScrollBar().setAccessible(false);
+        getHorizontalScrollBar().setAccessible(false);
         // setViewedComponent 将 content 放入内部 contentHolder
         // content 保持自身高度，viewport 自动提供滚动
         contentHeight_ = contentHeight;
@@ -65,10 +71,21 @@ public:
                 continue;
             }
 
+            nameControlsByPrecedingLabels(*page.content);
+
             // 统一包装为可滚动：内容比视口矮时滚动条不出现，比视口高时自动出现
             auto* scrollable = new ScrollablePage(std::move(page.content), page.totalHeight);
             tabbedComponent_.addTab(page.title, UIColors::backgroundDark, scrollable, true);
         }
+
+        // Доступность: кнопки вкладок по умолчанию не берут фокус, и Tab их пропускал.
+        auto& tabBar = tabbedComponent_.getTabbedButtonBar();
+        for (int i = 0; i < tabBar.getNumTabs(); ++i)
+            if (auto* tabButton = tabBar.getTabButton(i))
+                tabButton->setWantsKeyboardFocus(true);
+        tabbedComponent_.onTabChanged = [this](const juce::String& name) {
+            a11y::announce(*this, name);
+        };
 
         closeButton_.setButtonText(LOC(kClose));
         closeButton_.setColour(juce::TextButton::buttonColourId, UIColors::accent);
@@ -106,10 +123,81 @@ public:
                 dialogWindow->setTitleBarHeight(0);
                 dialogWindow->setContentComponentSize(contentWidth, contentHeight);
             }
+
+            // Доступность: при открытии фокус был на самом окне, а не на элементе.
+            // Ставим его на выбранную вкладку, когда окно уже на экране.
+            juce::Component::SafePointer<TabbedPreferencesDialog> safeThis(this);
+            juce::Timer::callAfterDelay(100, [safeThis] {
+                if (safeThis == nullptr)
+                    return;
+                auto& bar = safeThis->tabbedComponent_.getTabbedButtonBar();
+                if (auto* tabButton = bar.getTabButton(bar.getCurrentTabIndex()))
+                    if (tabButton->isShowing())
+                        tabButton->grabKeyboardFocus();
+            });
         }
     }
 
+    // Ctrl+Tab / Ctrl+Shift+Tab — следующая и предыдущая вкладка, как в окнах Windows.
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        const auto mods = key.getModifiers();
+        if (key.getKeyCode() == juce::KeyPress::tabKey && mods.isCtrlDown() && !mods.isAltDown()) {
+            const int count = tabbedComponent_.getNumTabs();
+            if (count > 0) {
+                const int step = mods.isShiftDown() ? count - 1 : 1;
+                tabbedComponent_.setCurrentTabIndex((tabbedComponent_.getCurrentTabIndex() + step) % count);
+            }
+            return true;
+        }
+        return false;
+    }
+
 private:
+    // Кнопки вкладок: сообщаем имя открытой вкладки, иначе после Enter на кнопке тишина.
+    class AnnouncingTabs final : public juce::TabbedComponent
+    {
+    public:
+        AnnouncingTabs() : juce::TabbedComponent(juce::TabbedButtonBar::TabsAtTop) {}
+        std::function<void(const juce::String&)> onTabChanged;
+
+        void currentTabChanged(int, const juce::String& newTabName) override
+        {
+            if (onTabChanged != nullptr && isShowing())
+                onTabChanged(newTabName);
+        }
+    };
+
+    // Страницы настроек устроены как «подпись, затем элемент». JUCE отдаёт скринридеру текст
+    // подписи дважды (как имя и как значение), а у списков и ползунков имени нет вовсе.
+    // Переносим текст подписи в имя элемента и скрываем саму подпись. У кнопок с собственным
+    // текстом (сочетание клавиш, цвет) текст меняется, поэтому подпись идёт в описание.
+    static void nameControlsByPrecedingLabels(juce::Component& page)
+    {
+        juce::Label* pendingLabel = nullptr;
+        for (auto* child : page.getChildren()) {
+            if (auto* label = dynamic_cast<juce::Label*>(child)) {
+                pendingLabel = label;
+                continue;
+            }
+            if (pendingLabel != nullptr && child->getTitle().isEmpty()) {
+                const auto caption = pendingLabel->getText();
+                auto* button = dynamic_cast<juce::Button*>(child);
+                if (button != nullptr && button->getButtonText().isNotEmpty()) {
+                    button->setDescription(caption);
+                    pendingLabel->setAccessible(false);
+                } else if (button != nullptr
+                           || dynamic_cast<juce::ComboBox*>(child) != nullptr
+                           || dynamic_cast<juce::Slider*>(child) != nullptr
+                           || dynamic_cast<juce::TextEditor*>(child) != nullptr) {
+                    child->setTitle(caption);
+                    pendingLabel->setAccessible(false);
+                }
+            }
+            pendingLabel = nullptr;
+        }
+    }
+
     void closeDialog()
     {
         if (closing_)
@@ -130,7 +218,7 @@ private:
         setLookAndFeel(&openTuneLookAndFeel_);
     }
 
-    juce::TabbedComponent tabbedComponent_{juce::TabbedButtonBar::TabsAtTop};
+    AnnouncingTabs tabbedComponent_;
     juce::TextButton closeButton_;
     OpenTuneLookAndFeel openTuneLookAndFeel_;
     AuroraLookAndFeel auroraLookAndFeel_;
