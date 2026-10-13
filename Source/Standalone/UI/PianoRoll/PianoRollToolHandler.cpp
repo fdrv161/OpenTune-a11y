@@ -910,6 +910,13 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     }
 
     const bool moveRight = keyCode == juce::KeyPress::rightKey;
+    // Выбраны все ноты (Ctrl+A): соседей у выделения нет, и стрелки молчали бы.
+    // Вправо — к первой ноте, влево — к последней.
+    if (noteCount > 1 && static_cast<int>(selectedIndices.size()) == noteCount) {
+        selectNoteFromKeyboard(notes, edgeNote(!moveRight));
+        return true;
+    }
+
     double boundaryTime = notes[static_cast<size_t>(selectedIndices.front())].startTime;
     for (int index : selectedIndices) {
         const double startTime = notes[static_cast<size_t>(index)].startTime;
