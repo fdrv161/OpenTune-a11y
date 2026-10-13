@@ -95,6 +95,7 @@ jobs:
           New-Item -ItemType Directory -Force out | Out-Null
           Copy-Item -Recurse $bundle out/
           Get-ChildItem -Recurse out | ForEach-Object { $_.FullName }
+          "Плагин собран: OpenTune.vst3 (JUCE ${{ inputs.juce_ref }})" >> $env:GITHUB_STEP_SUMMARY
 
       - uses: actions/upload-artifact@v4
         with:
