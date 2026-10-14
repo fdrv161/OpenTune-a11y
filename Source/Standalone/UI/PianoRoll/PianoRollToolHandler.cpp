@@ -2915,20 +2915,17 @@ void PianoRollToolHandler::adjustSelectedNotesVolumeByKeyboard(int direction, bo
         notifyKeyboardNote(notes.empty() ? KeyboardNoteEvent::NoNotes : KeyboardNoteEvent::NoSelection, notes, -1);
         return;
     }
-    const auto snap = ctx_.getEditableContentSnapshot();
-    if (!snap || !ctx_.commitVolumeEnvelope)
+    if (!ctx_.editVolumeEnvelopeRegions)
         return;
 
+    // Same transaction as the mouse drag: every selected note keeps its own level and
+    // gets the same step (1 dB, Alt 0.1 dB).
     const float step = static_cast<float>(direction) * (fine ? 0.1f : 1.0f);
-    AutomationLane envelope = snap->volumeEnvelope;
-    for (int index : selected) {
-        const auto& note = notes[static_cast<size_t>(index)];
-        envelope.setRegionGain(note.startTime, note.endTime,
-                               snap->volumeEnvelope.evalAt(note.startTime) + step);
-    }
-    if (envelope == snap->volumeEnvelope)
+    const auto result = ctx_.editVolumeEnvelopeRegions(selected, ctx_.getNotesRevision(), step,
+                                                       LOC(kToolVolumeEnvelope));
+    // NoChange: at the limit; stay silent, as at list ends.
+    if (result.status != VolumeEnvelopeRegionEditStatus::Applied)
         return;
-    ctx_.commitVolumeEnvelope(snap->volumeEnvelope, std::move(envelope));
     notifyKeyboardNote(KeyboardNoteEvent::VolumeChanged, committedNotes(ctx_), selected.front());
 }
 
@@ -2937,18 +2934,13 @@ void PianoRollToolHandler::resetSelectedNotesVolumeByKeyboard()
 {
     const auto& notes = committedNotes(ctx_);
     const auto selected = collectSelectedNoteIndices(notes);
-    const auto snap = ctx_.getEditableContentSnapshot();
-    if (selected.empty() || !snap || !ctx_.commitVolumeEnvelope)
+    if (selected.empty() || !ctx_.resetVolumeEnvelopeRegion)
         return;
 
-    AutomationLane envelope = snap->volumeEnvelope;
-    for (int index : selected) {
-        const auto& note = notes[static_cast<size_t>(index)];
-        envelope.setRegionGain(note.startTime, note.endTime, 0.0f);
-    }
-    // Already at 0 dB: nothing is committed, but still say the level.
-    if (!(envelope == snap->volumeEnvelope))
-        ctx_.commitVolumeEnvelope(snap->volumeEnvelope, std::move(envelope));
+    // The double-click resets one note; the keyboard resets each selected note the same way.
+    // A note already at 0 dB gives NoChange and nothing is committed, but the level is still said.
+    for (int index : selected)
+        ctx_.resetVolumeEnvelopeRegion(index, ctx_.getNotesRevision(), LOC(kToolVolumeEnvelope));
     notifyKeyboardNote(KeyboardNoteEvent::VolumeChanged, committedNotes(ctx_), selected.front());
 }
 
