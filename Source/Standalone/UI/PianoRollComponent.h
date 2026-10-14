@@ -697,9 +697,9 @@ private:
 
     // Accessibility: speech for the keyboard-selected note and audition of its vocal.
     void handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEvent event, const std::vector<Note>& notes, int index);
-    enum class NoteDetail { Navigation, Target, Sung, Full };
+    enum class NoteDetail { Navigation, Target, Full };
     juce::String describeKeyboardNote(const std::vector<Note>& notes, int index, NoteDetail detail) const;
-    void auditionNote(const Note& note, bool withCorrection = true);
+    void auditionNote(const Note& note);
     juce::String keyboardToolName(ToolId tool) const;
     juce::String modulationPercentText(const Note& note) const;
     juce::String driftPercentText(const Note& note) const;

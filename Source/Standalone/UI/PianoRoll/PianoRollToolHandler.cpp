@@ -850,7 +850,6 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     const bool upOrDown = keyCode == juce::KeyPress::upKey || keyCode == juce::KeyPress::downKey;
     const bool isInfoKey = keyCode == 'I' || keyCode == 'i';
     const bool isResetKey = keyCode == 'R' || keyCode == 'r';
-    const bool isOriginalKey = keyCode == 'O' || keyCode == 'o';
     const bool isSplitKey = keyCode == 'X' || keyCode == 'x';
     const bool isMergeKey = keyCode == 'J' || keyCode == 'j';
     const bool isHomeOrEnd = keyCode == juce::KeyPress::homeKey || keyCode == juce::KeyPress::endKey;
@@ -862,13 +861,13 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     if (plain && keyCode == juce::KeyPress::returnKey && openDyne)
         return applyNoteDefaultActionByKeyboard();
 
-    // Extra mouse-free keys (Alt+Up/Down, Home, End, I, R, O, X, J) do not override a binding
+    // Extra mouse-free keys (Alt+Up/Down, Home, End, I, R, X, J) do not override a binding
     // the user assigned to something else in the shortcut settings.
     const bool leftOrRight = keyCode == juce::KeyPress::leftKey || keyCode == juce::KeyPress::rightKey;
     // Ctrl+Left/Right move the end of the note, Ctrl+Shift+Left/Right its start.
     const bool resizeKey = leftOrRight && mods.isCtrlDown() && !mods.isAltDown();
     const bool extraKey = (altOnly && upOrDown) || (shiftOnly && leftOrRight) || resizeKey
-        || (plain && (isInfoKey || isResetKey || isOriginalKey || isSplitKey || isMergeKey || isHomeOrEnd));
+        || (plain && (isInfoKey || isResetKey || isSplitKey || isMergeKey || isHomeOrEnd));
     if (extraKey
         && KeyShortcutConfig::findShortcutForBinding(ctx_.getShortcutSettings(),
                                                      KeyShortcutConfig::KeyBinding(keyCode, mods))
@@ -927,17 +926,6 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     // there was no quick way to return one note to how it was sung.
     if (isResetKey) {
         moveSelectedNotesPitchByKeyboard(0, false, true);
-        return true;
-    }
-    // O: hear the selected note as sung, without the correction; nothing is changed.
-    if (isOriginalKey) {
-        const auto selected = collectSelectedNoteIndices(notes);
-        if (noteCount == 0)
-            notifyKeyboardNote(KeyboardNoteEvent::NoNotes, notes, -1);
-        else if (selected.empty())
-            notifyKeyboardNote(KeyboardNoteEvent::NoSelection, notes, -1);
-        else
-            notifyKeyboardNote(KeyboardNoteEvent::AuditionOriginal, notes, selected.front());
         return true;
     }
 

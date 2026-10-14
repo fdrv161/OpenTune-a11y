@@ -108,8 +108,7 @@ public:
         VolumeChanged,      // arrows or Enter with the Volume Envelope tool
         RangeSelected,      // Shift+Left/Right: index is the note at the moving end
         NoteResized,        // Ctrl(+Shift)+Left/Right: index is the resized note
-        SingleNoteNeeded,   // the action works on one selected note only
-        AuditionOriginal    // O: play the note as sung, without correction
+        SingleNoteNeeded    // the action works on one selected note only
     };
 
     // PianoRoll 组件提供的回调上下文。
