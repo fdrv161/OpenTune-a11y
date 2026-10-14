@@ -842,12 +842,18 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     }
 
     const auto selectedIndices = collectSelectedNoteIndices(notes);
-    if (selectedIndices.empty()) {
-        // Without a selection start from REAPER's edit cursor when it is known, so the user
-        // lands where they are in the song: Right takes the note under the cursor or the next
-        // one, Left the note under the cursor or the previous one. Past the last or before the
-        // first note, the nearest note. Without a cursor: the first note.
-        const auto cursor = ctx_.getEditCursorSourceTime ? ctx_.getEditCursorSourceTime() : std::nullopt;
+    // The place in the song moved since the last arrow (playback paused somewhere else, or the
+    // edit cursor was moved in REAPER): start from there, as without a selection. Unknown
+    // positions (during playback) are not remembered, so a pause after them still counts.
+    const auto cursor = ctx_.getEditCursorSourceTime ? ctx_.getEditCursorSourceTime() : std::nullopt;
+    const bool cursorMoved = cursor && lastArrowCursor_ && std::abs(*cursor - *lastArrowCursor_) > 1.0e-6;
+    if (cursor)
+        lastArrowCursor_ = cursor;
+    if (selectedIndices.empty() || cursorMoved) {
+        // Start from REAPER's edit cursor when it is known, so the user lands where they are
+        // in the song: Right takes the note under the cursor or the next one, Left the note
+        // under the cursor or the previous one. Past the last or before the first note, the
+        // nearest note. Without a cursor: the first note.
         if (cursor) {
             const bool right = keyCode == juce::KeyPress::rightKey;
             int target = -1;
