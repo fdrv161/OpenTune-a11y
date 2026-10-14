@@ -105,7 +105,8 @@ public:
         ModulationChanged,  // arrows or Enter with the Pitch Modulation tool
         DriftChanged,       // arrows or Enter with the Pitch Drift tool
         Removed,            // Delete or Cut: index is the number of removed notes
-        VolumeChanged       // arrows or Enter with the Volume Envelope tool
+        VolumeChanged,      // arrows or Enter with the Volume Envelope tool
+        RangeSelected       // Shift+Left/Right: index is the note at the moving end
     };
 
     // PianoRoll 组件提供的回调上下文。
@@ -332,6 +333,7 @@ private:
     bool handleNoteArrowKey(const juce::KeyPress& key);
     void moveSelectedNotesPitchByKeyboard(int direction, bool fineCents = false);
     void selectNoteFromKeyboard(const std::vector<Note>& notes, int index);
+    void extendSelectionByKeyboard(bool moveRight);
     void notifyKeyboardNote(KeyboardNoteEvent event, const std::vector<Note>& notes, int index);
     void splitSelectedNoteByKeyboard();
     void mergeSelectedNoteWithNext();
@@ -420,6 +422,9 @@ private:
     // EQ 工具：mouseDown 命中的 pending 主音符 index（纯点击 mouseUp 时消费一次）。
     // 拖拽超过阈值转为框选时、setTool/cancelActiveMouseGesture 时清理。
     int pendingEqPrimaryIndex_ = -1;
+    // Shift+Left/Right range: the fixed end and the moving end (note indices).
+    int keyboardRangeAnchor_ = -1;
+    int keyboardRangeActive_ = -1;
     double lastDrawTime_ = 0.0;
     float lastDrawF0_ = 0.0f;
     AutomationLane volumeDragBaselineEnvelope_;

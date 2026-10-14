@@ -860,7 +860,8 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
 
     // Extra mouse-free keys (Shift+Up/Down, Home, End, I, X, J) do not override a binding
     // the user assigned to something else in the shortcut settings.
-    const bool extraKey = (shiftOnly && upOrDown)
+    const bool leftOrRight = keyCode == juce::KeyPress::leftKey || keyCode == juce::KeyPress::rightKey;
+    const bool extraKey = (shiftOnly && (upOrDown || leftOrRight))
         || (plain && (isInfoKey || isSplitKey || isMergeKey || isHomeOrEnd));
     if (extraKey
         && KeyShortcutConfig::findShortcutForBinding(ctx_.getShortcutSettings(),
@@ -879,6 +880,11 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
         else
             // Shift: fine adjustment by 1 cent.
             moveSelectedNotesPitchByKeyboard(direction, shiftOnly);
+        return true;
+    }
+    // Shift+Left/Right extend the selection, like Shift+click on a note.
+    if (shiftOnly && leftOrRight) {
+        extendSelectionByKeyboard(keyCode == juce::KeyPress::rightKey);
         return true;
     }
     if (!plain)
@@ -970,6 +976,75 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     if (adjacentIndex >= 0)
         selectNoteFromKeyboard(notes, adjacentIndex);
     return true;
+}
+
+// Shift+Left/Right, as in Windows lists: the anchor stays, the other end moves one note.
+// Moving back towards the anchor shrinks the range.
+void PianoRollToolHandler::extendSelectionByKeyboard(bool moveRight)
+{
+    const auto& notes = committedNotes(ctx_);
+    const int noteCount = static_cast<int>(notes.size());
+    if (noteCount == 0) {
+        notifyKeyboardNote(KeyboardNoteEvent::NoNotes, notes, -1);
+        return;
+    }
+
+    // Time order: array order is not treated as time order.
+    std::vector<int> order(static_cast<size_t>(noteCount));
+    for (int i = 0; i < noteCount; ++i)
+        order[static_cast<size_t>(i)] = i;
+    std::stable_sort(order.begin(), order.end(), [&notes](int a, int b) {
+        return notes[static_cast<size_t>(a)].startTime < notes[static_cast<size_t>(b)].startTime;
+    });
+    std::vector<int> position(static_cast<size_t>(noteCount));
+    for (int i = 0; i < noteCount; ++i)
+        position[static_cast<size_t>(order[static_cast<size_t>(i)])] = i;
+    const auto posOf = [&position](int index) { return position[static_cast<size_t>(index)]; };
+
+    const auto selected = collectSelectedNoteIndices(notes);
+    if (selected.empty()) {
+        const int first = order[static_cast<size_t>(moveRight ? 0 : noteCount - 1)];
+        keyboardRangeAnchor_ = keyboardRangeActive_ = first;
+        selectNoteFromKeyboard(notes, first);
+        return;
+    }
+
+    // Keep the anchor only while the selection is still exactly the range made with Shift;
+    // after a click, an edit or plain arrows start again from the current selection.
+    bool rangeStillValid = keyboardRangeAnchor_ >= 0 && keyboardRangeAnchor_ < noteCount
+                        && keyboardRangeActive_ >= 0 && keyboardRangeActive_ < noteCount;
+    if (rangeStillValid) {
+        const int lo = std::min(posOf(keyboardRangeAnchor_), posOf(keyboardRangeActive_));
+        const int hi = std::max(posOf(keyboardRangeAnchor_), posOf(keyboardRangeActive_));
+        rangeStillValid = static_cast<int>(selected.size()) == hi - lo + 1;
+        for (int index : selected)
+            rangeStillValid = rangeStillValid && posOf(index) >= lo && posOf(index) <= hi;
+    }
+    if (!rangeStillValid) {
+        int minPos = noteCount, maxPos = -1;
+        for (int index : selected) {
+            minPos = std::min(minPos, posOf(index));
+            maxPos = std::max(maxPos, posOf(index));
+        }
+        keyboardRangeAnchor_ = order[static_cast<size_t>(moveRight ? minPos : maxPos)];
+        keyboardRangeActive_ = order[static_cast<size_t>(moveRight ? maxPos : minPos)];
+    }
+
+    // Stay silent at the ends of the list.
+    const int next = posOf(keyboardRangeActive_) + (moveRight ? 1 : -1);
+    if (next < 0 || next >= noteCount)
+        return;
+    keyboardRangeActive_ = order[static_cast<size_t>(next)];
+
+    const int lo = std::min(posOf(keyboardRangeAnchor_), next);
+    const int hi = std::max(posOf(keyboardRangeAnchor_), next);
+    std::vector<int> range;
+    for (int p = lo; p <= hi; ++p)
+        range.push_back(order[static_cast<size_t>(p)]);
+    ctx_.getState().noteSelection.setFromIndices(std::move(range), noteCount);
+    if (ctx_.invalidateSelectionFeedback)
+        ctx_.invalidateSelectionFeedback();
+    notifyKeyboardNote(KeyboardNoteEvent::RangeSelected, notes, keyboardRangeActive_);
 }
 
 void PianoRollToolHandler::selectNoteFromKeyboard(const std::vector<Note>& notes, int index)

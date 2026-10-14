@@ -5823,6 +5823,16 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             a11y::announce(*this, Loc::format(LOC_RAW("All notes selected: {0}"),
                                               juce::String(static_cast<int>(notes.size()))));
             return;
+        case Event::RangeSelected:
+            // Count first, then the note at the moving end of the range.
+            if (pendingAuditionTimer_ != nullptr)
+                pendingAuditionTimer_->stopTimer();
+            a11y::announce(*this, Loc::format(LOC_RAW("Notes selected: {0}, {1}"),
+                                              juce::String(static_cast<int>(interactionState_.noteSelection.selectedIndices.size())),
+                                              describeKeyboardNote(notes, index, NoteDetail::Navigation)));
+            if (index >= 0 && index < static_cast<int>(notes.size()))
+                auditionNote(notes[static_cast<size_t>(index)]);
+            return;
         case Event::VolumeChanged:
             if (index >= 0 && index < static_cast<int>(notes.size())) {
                 // Only the new level, like the other value edits.
