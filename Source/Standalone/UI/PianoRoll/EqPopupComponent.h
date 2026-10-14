@@ -202,6 +202,7 @@ private:
     bool commitPending_ = false;
     double commitDeadlineMs_ = 0.0;
     bool editorJustClosed_ = false;    // the key that closed the number field must not act again
+    bool gridAfterEditor_ = false;     // Tab in the number field: keep it and go back to the grid
 
     std::vector<double> hoverBandAmounts_ = std::vector<double>(EqSettings::kMaxFilters, 0.0);
     static constexpr double kHoverFadeInTime = 0.50;

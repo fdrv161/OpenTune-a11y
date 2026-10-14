@@ -11,6 +11,7 @@
 #include "../../../Utils/LocalizationManager.h"
 #include "../../../Utils/ScreenReaderAnnouncer.h"
 #include <cmath>
+#include <utility>
 
 namespace OpenTune {
 
@@ -2060,9 +2061,14 @@ bool EqPopupComponent::handleKnobKey(EqKnob& knob, const juce::KeyPress& key)
 
     if (valueBox != nullptr && valueBox->isBeingEdited())
     {
-        // The field takes the other keys itself. Tab keeps the number, Esc drops it.
+        // The field takes the other keys itself. Tab keeps the number and closes the
+        // circle grid -> knob -> field -> grid; Shift+Tab keeps it and goes back to the knob;
+        // Esc drops it.
         if (code == juce::KeyPress::tabKey)
+        {
+            gridAfterEditor_ = !mods.isShiftDown();
             valueBox->hideEditor(false);
+        }
         else if (code == juce::KeyPress::escapeKey)
             valueBox->hideEditor(true);
         return true;
@@ -2093,13 +2099,19 @@ bool EqPopupComponent::handleKnobKey(EqKnob& knob, const juce::KeyPress& key)
                     if (safeThis == nullptr)
                         return;
                     safeThis->editorJustClosed_ = false;
+                    const bool toGrid = std::exchange(safeThis->gridAfterEditor_, false);
                     if (safeKnob == nullptr || !safeKnob->isShowing())
                         return;
-                    // Back to the knob for more arrows, unless a click took focus elsewhere.
+                    // Back to the knob for more arrows (or to the grid after Tab),
+                    // unless a click took focus elsewhere.
                     auto* focused = juce::Component::getCurrentlyFocusedComponent();
                     const bool focusIsFree = focused == nullptr || focused == safeKnob.getComponent()
                                           || safeKnob->isParentOf(focused);
-                    if (focusIsFree && !safeKnob->hasKeyboardFocus(false))
+                    if (!focusIsFree)
+                        return;
+                    if (toGrid)
+                        safeThis->focusGrid();
+                    else if (!safeKnob->hasKeyboardFocus(false))
                         safeKnob->grabKeyboardFocus();
                 });
             };
