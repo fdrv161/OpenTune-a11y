@@ -49,6 +49,9 @@
 #include "Utils/SilentGapDetector.h"
 #include "Utils/TimeCoordinate.h"
 #include "Utils/UndoManager.h"
+#if !JucePlugin_Build_Standalone
+#include "Plugin/ReaperHostBridge.h"
+#endif
 #include "Utils/VocoderModelWeight.h"
 #include "Utils/PianoKeyAudition.h"
 #include "Utils/NoteAudition.h"
@@ -1013,6 +1016,13 @@ public:
     UndoManager& getUndoManager() { return undoManager_; }
     PianoKeyAudition& getPianoKeyAudition() { return pianoKeyAudition_; }
     NoteAudition& getNoteAudition() { return noteAudition_; }
+#if !JucePlugin_Build_Standalone
+    // Accessibility: REAPER's edit cursor while stopped (see ReaperHostBridge).
+    juce::VST3ClientExtensions* getVST3ClientExtensions() override { return &reaperHost_; }
+    std::optional<double> getStoppedEditCursorSeconds() const { return reaperHost_.getStoppedEditCursorSeconds(); }
+#else
+    std::optional<double> getStoppedEditCursorSeconds() const { return std::nullopt; }
+#endif
     // Rendered (corrected) audio of a content. In ARA it is owned by the DocumentController,
     // not by this plugin instance, so resolve it through the shared service lookup.
     std::shared_ptr<const RenderCache> getReadableRenderCache(ContentKey key) const
@@ -1025,6 +1035,9 @@ private:
     UndoManager undoManager_;
     PianoKeyAudition pianoKeyAudition_;
     NoteAudition noteAudition_;
+#if !JucePlugin_Build_Standalone
+    ReaperHostBridge reaperHost_;
+#endif
     OutputSpectrumAnalyzer outputSpectrumAnalyzer_;
 
     // Hard-cut render mutation request primitive. This is the only path

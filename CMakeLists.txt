@@ -848,6 +848,8 @@ set(OPENTUNE_STANDALONE_SOURCES
 set(OPENTUNE_NON_STANDALONE_SOURCES
         Source/Plugin/Vst3ProcessorStateCodec.cpp
         Source/Plugin/Vst3ProcessorStateCodec.h
+        Source/Plugin/ReaperHostBridge.cpp
+        Source/Plugin/ReaperHostBridge.h
         Source/Content/CaptureSegmentContent.h
         Source/Content/CaptureSegmentContent.cpp
 )
