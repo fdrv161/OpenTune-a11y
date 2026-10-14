@@ -845,6 +845,8 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     const int keyCode = key.getKeyCode();
     const bool plain = !mods.isAnyModifierKeyDown();
     const bool shiftOnly = mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown();
+    // Alt = fine step, as Alt while dragging a note turns the pitch grid off (dragNotePitch).
+    const bool altOnly = mods.isAltDown() && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isCommandDown();
     const bool upOrDown = keyCode == juce::KeyPress::upKey || keyCode == juce::KeyPress::downKey;
     const bool isInfoKey = keyCode == 'I' || keyCode == 'i';
     const bool isSplitKey = keyCode == 'X' || keyCode == 'x';
@@ -858,12 +860,12 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     if (plain && keyCode == juce::KeyPress::returnKey && openDyne)
         return applyNoteDefaultActionByKeyboard();
 
-    // Extra mouse-free keys (Shift+Up/Down, Home, End, I, X, J) do not override a binding
+    // Extra mouse-free keys (Alt+Up/Down, Home, End, I, X, J) do not override a binding
     // the user assigned to something else in the shortcut settings.
     const bool leftOrRight = keyCode == juce::KeyPress::leftKey || keyCode == juce::KeyPress::rightKey;
     // Ctrl+Left/Right move the end of the note, Ctrl+Shift+Left/Right its start.
     const bool resizeKey = leftOrRight && mods.isCtrlDown() && !mods.isAltDown();
-    const bool extraKey = (shiftOnly && (upOrDown || leftOrRight)) || resizeKey
+    const bool extraKey = (altOnly && upOrDown) || (shiftOnly && leftOrRight) || resizeKey
         || (plain && (isInfoKey || isSplitKey || isMergeKey || isHomeOrEnd));
     if (extraKey
         && KeyShortcutConfig::findShortcutForBinding(ctx_.getShortcutSettings(),
@@ -871,17 +873,17 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
                != KeyShortcutConfig::ShortcutId::Count)
         return false;
 
-    if (upOrDown && (plain || shiftOnly)) {
+    if (upOrDown && (plain || altOnly)) {
         const int direction = keyCode == juce::KeyPress::upKey ? 1 : -1;
         // Like mouse dragging: the arrows change whatever the current tool edits.
         if (openDyne && (currentTool_ == ToolId::PitchModulation || currentTool_ == ToolId::PitchDrift))
-            adjustSelectedNotesModDriftByKeyboard(direction, shiftOnly);
+            adjustSelectedNotesModDriftByKeyboard(direction, altOnly);
         else if (openDyne && currentTool_ == ToolId::VolumeEnvelope)
-            // 1 dB per press, Shift 0.1 dB.
-            adjustSelectedNotesVolumeByKeyboard(direction, shiftOnly);
+            // 1 dB per press, Alt 0.1 dB.
+            adjustSelectedNotesVolumeByKeyboard(direction, altOnly);
         else
-            // Shift: fine adjustment by 1 cent.
-            moveSelectedNotesPitchByKeyboard(direction, shiftOnly);
+            // Alt: 1 cent without the pitch grid.
+            moveSelectedNotesPitchByKeyboard(direction, altOnly);
         return true;
     }
     if (resizeKey) {
@@ -1402,7 +1404,7 @@ bool PianoRollToolHandler::commitKeyboardNoteEdit(const std::vector<Note>& work,
     return committed;
 }
 
-// Up/Down with the Pitch Modulation or Pitch Drift tool: 5% steps, 1% with Shift.
+// Up/Down with the Pitch Modulation or Pitch Drift tool: 5% steps, 1% with Alt.
 // Values and their meaning match mouse dragging (dragNotePitch).
 void PianoRollToolHandler::adjustSelectedNotesModDriftByKeyboard(int direction, bool fine)
 {
