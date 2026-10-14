@@ -6179,6 +6179,19 @@ void PianoRollComponent::auditionNote(const Note& note)
             cache->overlayCanonicalAudio(segment, 0, numSamples, startSample);
     }
 
+    // Note volume (Volume Envelope tool) is not in the render: playback applies it
+    // (applyAutomationGain). Apply it here too, or a volume change is not heard.
+    // Segment samples are source time, so no time grid mapping is needed.
+    if (const auto snapshot = readEditedSnapshot(); snapshot != nullptr && !snapshot->volumeEnvelope.empty()) {
+        constexpr float kDbToLinear = 0.11512925465f; // ln(10) / 20
+        for (int s = 0; s < numSamples; ++s) {
+            const double sourceSeconds = static_cast<double>(startSample + s) / sampleRate;
+            const float gain = std::exp(snapshot->volumeEnvelope.evalAt(sourceSeconds) * kDbToLinear);
+            for (int channel = 0; channel < segment.getNumChannels(); ++channel)
+                segment.getWritePointer(channel)[s] *= gain;
+        }
+    }
+
     noteAudition_->play(segment, sampleRate, 0, numSamples);
 }
 
