@@ -270,8 +270,9 @@ private:
             else if (code == juce::KeyPress::downKey || code == juce::KeyPress::leftKey)  target -= 1.0;
             else if (code == juce::KeyPress::pageUpKey)                                   target += pageStep;
             else if (code == juce::KeyPress::pageDownKey)                                 target -= pageStep;
-            else if (code == juce::KeyPress::homeKey)                                     target = getMinimum();
-            else if (code == juce::KeyPress::endKey)                                      target = getMaximum();
+            // Home is the top and End the bottom, as in the EQ knobs (user's choice).
+            else if (code == juce::KeyPress::homeKey)                                     target = getMaximum();
+            else if (code == juce::KeyPress::endKey)                                      target = getMinimum();
             else
                 return juce::Slider::keyPressed(key);
 

@@ -2015,10 +2015,11 @@ double EqPopupComponent::steppedKnobValue(const EqKnob& knob, const juce::KeyPre
         direction = 1, big = true;
     else if (code == juce::KeyPress::pageDownKey)
         direction = -1, big = true;
+    // Home is the top and End the bottom, as the user expects from REAPER faders.
     else if (code == juce::KeyPress::homeKey)
-        return lo;
-    else if (code == juce::KeyPress::endKey)
         return hi;
+    else if (code == juce::KeyPress::endKey)
+        return lo;
     else
         return value;
 
