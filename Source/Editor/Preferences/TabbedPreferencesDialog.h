@@ -151,6 +151,16 @@ public:
     bool keyPressed(const juce::KeyPress& key) override
     {
         const auto mods = key.getModifiers();
+        // JUCE buttons react to Space through key-state polling, which does not work inside
+        // REAPER (NVDA user: Space did not toggle a check box, Enter did). Press the focused
+        // button ourselves.
+        if (key.getKeyCode() == juce::KeyPress::spaceKey && !mods.isAnyModifierKeyDown()) {
+            auto* focused = juce::Component::getCurrentlyFocusedComponent();
+            if (auto* button = dynamic_cast<juce::Button*>(focused); button != nullptr && isParentOf(button)) {
+                button->triggerClick();
+                return true;
+            }
+        }
         if (key.getKeyCode() == juce::KeyPress::tabKey && mods.isCtrlDown() && !mods.isAltDown()) {
             const int count = tabbedComponent_.getNumTabs();
             if (count > 0) {
