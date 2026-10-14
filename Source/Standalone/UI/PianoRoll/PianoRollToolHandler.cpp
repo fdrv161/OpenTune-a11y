@@ -740,6 +740,7 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     // Ctrl+Left/Right move the end of the note, Ctrl+Shift+Left/Right its start.
     const bool resizeKey = leftOrRight && mods.isCtrlDown() && !mods.isAltDown();
     const bool extraKey = ((altOnly || ctrlOnly || ctrlShift) && upOrDown) || (shiftOnly && leftOrRight) || resizeKey
+        || (shiftOnly && isSplitKey)
         || (plain && (isInfoKey || isResetKey || isSplitKey || isMergeKey || isHomeOrEnd));
     if (extraKey
         && KeyShortcutConfig::findShortcutForBinding(ctx_.getShortcutSettings(),
@@ -771,6 +772,10 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     }
     if (resizeKey) {
         resizeSelectedNoteByKeyboard(mods.isShiftDown(), keyCode == juce::KeyPress::rightKey ? 1 : -1);
+        return true;
+    }
+    if (shiftOnly && isSplitKey) {
+        splitSelectedNoteByKeyboard(true);
         return true;
     }
     // Shift+Left/Right extend the selection, like Shift+click on a note.
@@ -838,6 +843,27 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
 
     const auto selectedIndices = collectSelectedNoteIndices(notes);
     if (selectedIndices.empty()) {
+        // Without a selection start from REAPER's edit cursor when it is known, so the user
+        // lands where they are in the song: Right takes the note under the cursor or the next
+        // one, Left the note under the cursor or the previous one. Past the last or before the
+        // first note, the nearest note. Without a cursor: the first note.
+        const auto cursor = ctx_.getEditCursorSourceTime ? ctx_.getEditCursorSourceTime() : std::nullopt;
+        if (cursor) {
+            const bool right = keyCode == juce::KeyPress::rightKey;
+            int target = -1;
+            for (int index = 0; index < noteCount; ++index) {
+                const auto& note = notes[static_cast<size_t>(index)];
+                const bool candidate = right ? note.endTime > *cursor : note.startTime < *cursor;
+                if (!candidate)
+                    continue;
+                const double startTime = note.startTime;
+                if (target < 0 || (right ? startTime < notes[static_cast<size_t>(target)].startTime
+                                         : startTime > notes[static_cast<size_t>(target)].startTime))
+                    target = index;
+            }
+            selectNoteFromKeyboard(notes, target >= 0 ? target : edgeNote(right));
+            return true;
+        }
         // Without a selection the arrows used to do nothing, and there was no mouse-free way to select.
         selectNoteFromKeyboard(notes, edgeNote(false));
         return true;
@@ -1012,9 +1038,10 @@ void PianoRollToolHandler::notifyKeyboardNote(KeyboardNoteEvent event, const std
 
 // X: split the selected note where its sung pitch changes the most - usually where two sung
 // notes were merged into one. Without a clear pitch change the note is split in half.
-// The host cursor is not used: with the transport stopped the plugin does not learn where
-// the user moved it. The split itself uses the scissors planner (planScissorsSplit).
-void PianoRollToolHandler::splitSelectedNoteByKeyboard()
+// Shift+X splits at REAPER's edit cursor instead, when it is inside the note (the cursor
+// is read from REAPER while stopped, see ReaperHostBridge). The split itself uses the
+// scissors planner (planScissorsSplit).
+void PianoRollToolHandler::splitSelectedNoteByKeyboard(bool atEditCursor)
 {
     const auto beforeNotes = committedNotes(ctx_);
     if (beforeNotes.empty()) {
@@ -1041,7 +1068,18 @@ void PianoRollToolHandler::splitSelectedNoteByKeyboard()
     bool foundPitchChange = false;
     const auto f0tl = ctx_.getF0Timeline();
     const auto originalF0 = ctx_.getOriginalF0 ? ctx_.getOriginalF0() : std::vector<float>{};
-    if (!originalF0.empty() && !f0tl.isEmpty()) {
+    if (atEditCursor) {
+        const auto cursor = ctx_.getEditCursorSourceTime ? ctx_.getEditCursorSourceTime() : std::nullopt;
+        if (!cursor) {
+            notifyKeyboardNote(KeyboardNoteEvent::CursorUnknown, beforeNotes, index);
+            return;
+        }
+        if (*cursor <= original.startTime + kMinPartSeconds || *cursor >= original.endTime - kMinPartSeconds) {
+            notifyKeyboardNote(KeyboardNoteEvent::CursorOutsideNote, beforeNotes, index);
+            return;
+        }
+        splitTime = *cursor;
+    } else if (!originalF0.empty() && !f0tl.isEmpty()) {
         const auto range = f0tl.rangeForTimes(original.startTime, original.endTime);
         const int frameCount = static_cast<int>(originalF0.size());
         // Mean sung pitch (MIDI) of the voiced frames in [from, to) inside the note.
@@ -1110,7 +1148,9 @@ void PianoRollToolHandler::splitSelectedNoteByKeyboard()
     ctx_.getState().noteSelection.setSingle(index, static_cast<int>(newNotes.size()));
     if (ctx_.invalidateSelectionFeedback)
         ctx_.invalidateSelectionFeedback();
-    notifyKeyboardNote(foundPitchChange ? KeyboardNoteEvent::Split : KeyboardNoteEvent::SplitInHalf,
+    notifyKeyboardNote(atEditCursor       ? KeyboardNoteEvent::SplitAtCursor
+                       : foundPitchChange ? KeyboardNoteEvent::Split
+                                          : KeyboardNoteEvent::SplitInHalf,
                        newNotes, index);
 }
 
