@@ -16,6 +16,7 @@
 #include "OpenTuneLookAndFeel.h"
 #include "UIColors.h"
 #include "ToolIds.h"
+#include "../../Utils/AccessibleComboBox.h"
 
 namespace OpenTune {
 
@@ -212,7 +213,7 @@ private:
     AutoButtonPresentation autoButtonPresentation_;
     std::unique_ptr<juce::TextButton> pitchShiftButton_;
     // OpenDyne Pitch Grid 全局开关（No Snap / Chromatic / Key Scale）
-    juce::ComboBox pitchGridSelector_;
+    a11y::AccessibleComboBox pitchGridSelector_;
     int pitchShiftSemitone_ = 0;
     int pitchShiftCents_ = 0;
 

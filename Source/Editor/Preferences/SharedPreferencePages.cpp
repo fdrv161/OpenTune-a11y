@@ -4,6 +4,7 @@
 #include "Editor/ShortcutCaptureDialogContent.h"
 #include "Standalone/UI/UIColors.h"
 #include "Inference/ModelFactory.h"
+#include "Utils/AccessibleComboBox.h"
 #include "Utils/KeyShortcutConfig.h"
 #include "Utils/LocalizationManager.h"
 #include "Utils/ModelPathResolver.h"
@@ -161,9 +162,9 @@ private:
     AppPreferences& appPreferences_;
     std::function<void()> onPreferencesChanged_;
     juce::Label themeLabel_;
-    juce::ComboBox themeSelector_;
+    a11y::AccessibleComboBox themeSelector_;
     juce::Label languageLabel_;
-    juce::ComboBox languageSelector_;
+    a11y::AccessibleComboBox languageSelector_;
 };
 
 class SharedAudioPage final : public juce::Component
@@ -425,16 +426,16 @@ private:
     int contentHeight_ = 0;
     std::vector<VocoderWeightInfo> vocoderWeights_;
     juce::Label renderingPriorityLabel_;
-    juce::ComboBox renderingPrioritySelector_;
+    a11y::AccessibleComboBox renderingPrioritySelector_;
     juce::TextButton replayOnboardingButton_;
     juce::Label vocoderWeightLabel_;
-    juce::ComboBox vocoderWeightSelector_;
+    a11y::AccessibleComboBox vocoderWeightSelector_;
     juce::Label f0ModelLabel_;
-    juce::ComboBox f0ModelSelector_;
+    a11y::AccessibleComboBox f0ModelSelector_;
     juce::ToggleButton experimentalFeaturesToggle_;
     juce::Label experimentalFeaturesHintLabel_;
     juce::Label experimentalReferenceAlignModeLabel_;
-    juce::ComboBox experimentalReferenceAlignModeSelector_;
+    a11y::AccessibleComboBox experimentalReferenceAlignModeSelector_;
     juce::ToggleButton lightPitchCorrectionToggle_;
 };
 
@@ -642,7 +643,7 @@ private:
     bool isVst3Plugin_ = false;
     ZoomSensitivityConfig::ZoomSensitivitySettings zoomSettings_;
     juce::Label schemeLabel_;
-    juce::ComboBox schemeSelector_;
+    a11y::AccessibleComboBox schemeSelector_;
     juce::Label horizontalLabel_;
     juce::Slider horizontalSlider_;
     juce::Label verticalLabel_;
@@ -653,9 +654,9 @@ private:
     juce::Slider tuningSlider_;
     juce::TextButton resetButton_;
     juce::Label gridStyleLabel_;
-    juce::ComboBox gridStyleSelector_;
+    a11y::AccessibleComboBox gridStyleSelector_;
     juce::Label wholeNoteMoveSnapLabel_;
-    juce::ComboBox wholeNoteMoveSnapSelector_;
+    a11y::AccessibleComboBox wholeNoteMoveSnapSelector_;
 };
 
 class SharedVisualPage final : public juce::Component
@@ -917,7 +918,7 @@ private:
     AppPreferences& appPreferences_;
     std::function<void()> onPreferencesChanged_;
     juce::Label noteNameModeLabel_;
-    juce::ComboBox noteNameModeSelector_;
+    a11y::AccessibleComboBox noteNameModeSelector_;
     juce::ToggleButton showUnvoicedFramesToggle_;
     juce::Label backgroundBrightnessLabel_;
     juce::Slider backgroundBrightnessSlider_;

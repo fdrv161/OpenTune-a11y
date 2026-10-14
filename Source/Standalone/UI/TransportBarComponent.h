@@ -17,6 +17,7 @@
 #include <functional>
 #include "UIColors.h"
 #include "../../Utils/TimelineDisplayMode.h"
+#include "../../Utils/AccessibleComboBox.h"
 
 namespace OpenTune {
 
@@ -286,8 +287,8 @@ private:
     UnifiedToolbarButton tapButton_;
 
     // Scale controls
-    juce::ComboBox scaleRootSelector_;
-    juce::ComboBox scaleTypeSelector_;
+    a11y::AccessibleComboBox scaleRootSelector_;
+    a11y::AccessibleComboBox scaleTypeSelector_;
 
     // State
     bool isPlaying_ = false;
