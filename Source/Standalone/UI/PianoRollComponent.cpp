@@ -203,6 +203,7 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
     toolCtx.setCurrentTool = [this](ToolId tool) { setCurrentTool(tool); };
     // EQ 工具：主音符 index 由 ToolHandler 唯一判定并直通；EQ cursor 经主题机制应用
     toolCtx.openEqPreview = [this](int primaryIndex) { openEqPopupForSelection(primaryIndex); };
+    toolCtx.openEqFromKeyboard = [this](int primaryIndex) { openEqPopupForSelection(primaryIndex, true); };
     toolCtx.eqCursor = eqCursor_;
     toolCtx.showToolSelectionMenu = [this]() {
         // 在当前鼠标屏幕位置弹出纵向图标工具栏
@@ -986,7 +987,7 @@ void PianoRollComponent::clearNoteDraft()
 // EQ 工具：预览弹窗（PianoRollComponent 唯一持有）与选中组原子提交
 // ============================================================================
 
-void PianoRollComponent::openEqPopupForSelection(int primaryIndex)
+void PianoRollComponent::openEqPopupForSelection(int primaryIndex, bool fromKeyboard)
 {
     closeEqPopup();
 
@@ -1010,8 +1011,24 @@ void PianoRollComponent::openEqPopupForSelection(int primaryIndex)
     if (appPreferences_ != nullptr)
         eqPopup_->setRemoveConfirmationSuppressed(appPreferences_->getState().shared.suppressEqRemoveConfirmation);
     eqPopup_->onCommitSettings = [this](const EqSettings& settings) { applyEqSettingsToSelection(settings); };
-    eqPopup_->onRemoveEq = [this]() { removeEqFromSelection(); closeEqPopup(); };
-    eqPopup_->onClose = [this]() { closeEqPopup(); };
+    // Accessibility: closed from the keyboard, focus is back on the notes (closeEqPopup) and the result is said.
+    // closeEqPopup deletes the popup and this lambda with it, so the captured pointer is
+    // copied to the stack first and only the copy is used afterwards.
+    eqPopup_->onRemoveEq = [this]() {
+        auto* self = this;
+        const bool fromKeyboard = eqPopup_ != nullptr && eqPopup_->hasKeyboardFocus(true);
+        self->removeEqFromSelection();
+        self->closeEqPopup();
+        if (fromKeyboard)
+            a11y::announce(*self, LOC_RAW("EQ removed"), a11y::SpeechQueue::keepAll);
+    };
+    eqPopup_->onClose = [this]() {
+        auto* self = this;
+        const bool fromKeyboard = eqPopup_ != nullptr && eqPopup_->hasKeyboardFocus(true);
+        self->closeEqPopup();
+        if (fromKeyboard)
+            a11y::announce(*self, LOC_RAW("EQ closed"), a11y::SpeechQueue::keepAll);
+    };
     eqPopup_->onReadSpectrum = [this](SpectrumArray& spectrum,
                                       SpectrumArray& peaks) {
         spectrumReader_(spectrum, peaks);
@@ -1031,17 +1048,26 @@ void PianoRollComponent::openEqPopupForSelection(int primaryIndex)
         anchor = getNoteBounds(primary);
     eqPopup_->setBounds(placeEqPopupBounds(anchor));
     eqPopup_->toFront(false);
-    // Accessibility: the EQ window has no keyboard control yet; say so instead of staying silent.
-    a11y::announce(*this, LOC_RAW("EQ opened, mouse only. Escape closes it"));
+    // Accessibility: from the keyboard the window opens full size with focus on it;
+    // NVDA reads its title ("EQ, Band 1 of 3, Type, Low shelf").
+    if (fromKeyboard)
+        eqPopup_->startKeyboardEditing();
 }
 
 void PianoRollComponent::closeEqPopup()
 {
+    // A keyboard change still waiting to be committed must reach the notes first.
+    if (eqPopup_ != nullptr)
+        eqPopup_->flushPendingCommit();
     eqEditTargetIndices_.clear();
     if (eqPopup_ == nullptr)
         return;
+    // Focus inside the window would be lost with it; give it back to the notes.
+    const bool hadFocus = eqPopup_->hasKeyboardFocus(true);
     removeChildComponent(eqPopup_.get());
     eqPopup_.reset();
+    if (hadFocus && isShowing())
+        grabKeyboardFocus();
 }
 
 

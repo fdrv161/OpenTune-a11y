@@ -213,6 +213,8 @@ public:
         // 打开 EQ 弹窗预览：参数为主音符 index（纯点击 = mouseDown 记录的 pending
         // 主音符；框选 = 完成选择后的 anchor 音符）。只打开弹窗，不改 Note 数据。
         std::function<void(int)> openEqPreview;
+        // Accessibility: Enter with the EQ tool opens the full EQ window with keyboard focus.
+        std::function<void(int)> openEqFromKeyboard;
         // EQ 工具专属光标（组件侧构造一次，值拷贝共享 handle）。
         juce::MouseCursor eqCursor;
 

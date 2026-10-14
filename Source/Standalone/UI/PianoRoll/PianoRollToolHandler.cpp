@@ -1469,8 +1469,8 @@ bool PianoRollToolHandler::applyNoteDefaultActionByKeyboard()
     if (currentTool_ == ToolId::Eq) {
         const int anchor = ctx_.getState().noteSelection.anchorIndex;
         const bool anchorSelected = std::find(selected.begin(), selected.end(), anchor) != selected.end();
-        if (ctx_.openEqPreview)
-            ctx_.openEqPreview(anchorSelected ? anchor : selected.front());
+        if (ctx_.openEqFromKeyboard)
+            ctx_.openEqFromKeyboard(anchorSelected ? anchor : selected.front());
         return true;
     }
 

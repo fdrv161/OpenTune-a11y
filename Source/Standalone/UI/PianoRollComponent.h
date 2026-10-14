@@ -327,7 +327,7 @@ public:
     /** 为当前选中组打开 EQ 预览弹窗：只读选中组与主音符，主音符 eq 有值显示它，
      *  无值显示 EqSettings 默认；打开零 draft、零提交。主音符 index 由
      *  ToolHandler 唯一判定并经 toolCtx.openEqPreview 直通。 */
-    void openEqPopupForSelection(int primaryIndex);
+    void openEqPopupForSelection(int primaryIndex, bool fromKeyboard = false);
 
     void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override;
     void updateScrollBars();
