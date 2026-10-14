@@ -106,7 +106,9 @@ public:
         DriftChanged,       // arrows or Enter with the Pitch Drift tool
         Removed,            // Delete or Cut: index is the number of removed notes
         VolumeChanged,      // arrows or Enter with the Volume Envelope tool
-        RangeSelected       // Shift+Left/Right: index is the note at the moving end
+        RangeSelected,      // Shift+Left/Right: index is the note at the moving end
+        NoteResized,        // Ctrl(+Shift)+Left/Right: index is the resized note
+        SingleNoteNeeded    // the action works on one selected note only
     };
 
     // PianoRoll 组件提供的回调上下文。
@@ -334,6 +336,7 @@ private:
     void moveSelectedNotesPitchByKeyboard(int direction, bool fineCents = false);
     void selectNoteFromKeyboard(const std::vector<Note>& notes, int index);
     void extendSelectionByKeyboard(bool moveRight);
+    void resizeSelectedNoteByKeyboard(bool startEdge, int direction);
     void notifyKeyboardNote(KeyboardNoteEvent event, const std::vector<Note>& notes, int index);
     void splitSelectedNoteByKeyboard();
     void mergeSelectedNoteWithNext();

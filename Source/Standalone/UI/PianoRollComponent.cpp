@@ -5823,6 +5823,19 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             a11y::announce(*this, Loc::format(LOC_RAW("All notes selected: {0}"),
                                               juce::String(static_cast<int>(notes.size()))));
             return;
+        case Event::NoteResized:
+            if (index >= 0 && index < static_cast<int>(notes.size())) {
+                const auto& note = notes[static_cast<size_t>(index)];
+                const double start = sourceTimeToTimelineTime(note.startTime);
+                const double end = sourceTimeToTimelineTime(note.endTime);
+                a11y::announce(*this, Loc::format(LOC_RAW("start {0} s, length {1} s"),
+                                                  juce::String(start, 2), juce::String(end - start, 2)));
+                scheduleAuditionAfterRender(index);
+            }
+            return;
+        case Event::SingleNoteNeeded:
+            a11y::announce(*this, LOC_RAW("Select a single note"));
+            return;
         case Event::RangeSelected:
             // Count first, then the note at the moving end of the range.
             if (pendingAuditionTimer_ != nullptr)

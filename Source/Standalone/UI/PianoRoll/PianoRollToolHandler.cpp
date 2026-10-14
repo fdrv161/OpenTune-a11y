@@ -861,7 +861,9 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     // Extra mouse-free keys (Shift+Up/Down, Home, End, I, X, J) do not override a binding
     // the user assigned to something else in the shortcut settings.
     const bool leftOrRight = keyCode == juce::KeyPress::leftKey || keyCode == juce::KeyPress::rightKey;
-    const bool extraKey = (shiftOnly && (upOrDown || leftOrRight))
+    // Ctrl+Left/Right move the end of the note, Ctrl+Shift+Left/Right its start.
+    const bool resizeKey = leftOrRight && mods.isCtrlDown() && !mods.isAltDown();
+    const bool extraKey = (shiftOnly && (upOrDown || leftOrRight)) || resizeKey
         || (plain && (isInfoKey || isSplitKey || isMergeKey || isHomeOrEnd));
     if (extraKey
         && KeyShortcutConfig::findShortcutForBinding(ctx_.getShortcutSettings(),
@@ -880,6 +882,10 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
         else
             // Shift: fine adjustment by 1 cent.
             moveSelectedNotesPitchByKeyboard(direction, shiftOnly);
+        return true;
+    }
+    if (resizeKey) {
+        resizeSelectedNoteByKeyboard(mods.isShiftDown(), keyCode == juce::KeyPress::rightKey ? 1 : -1);
         return true;
     }
     // Shift+Left/Right extend the selection, like Shift+click on a note.
@@ -976,6 +982,104 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     if (adjacentIndex >= 0)
         selectNoteFromKeyboard(notes, adjacentIndex);
     return true;
+}
+
+// Keyboard version of dragging a note edge with the Select tool (handleSelectDrag/Up):
+// 10 ms per press, the same minimum length and the same rule for the touching neighbour,
+// which yields its boundary but keeps its own minimum length.
+void PianoRollToolHandler::resizeSelectedNoteByKeyboard(bool startEdge, int direction)
+{
+    const auto& notes = committedNotes(ctx_);
+    const auto selected = collectSelectedNoteIndices(notes);
+    if (selected.empty()) {
+        notifyKeyboardNote(notes.empty() ? KeyboardNoteEvent::NoNotes : KeyboardNoteEvent::NoSelection, notes, -1);
+        return;
+    }
+    if (selected.size() != 1) {
+        notifyKeyboardNote(KeyboardNoteEvent::SingleNoteNeeded, notes, -1);
+        return;
+    }
+
+    constexpr double step = 0.01;
+    constexpr double minDuration = 0.02;
+    const int idx = selected.front();
+    const int count = static_cast<int>(notes.size());
+    const auto editRange = sourceEditRange();
+    std::vector<Note> work = notes;
+    auto& note = work[static_cast<size_t>(idx)];
+    int neighbour = -1;
+
+    // Like the mouse code, this relies on notes being sorted by start time and not overlapping.
+    if (startEdge) {
+        double newStart = juce::jlimit(editRange.startSeconds, editRange.endSeconds,
+                                       note.startTime + direction * step);
+        newStart = std::max(0.0, std::min(newStart, note.endTime - minDuration));
+        if (idx > 0) {
+            auto& prev = work[static_cast<size_t>(idx - 1)];
+            if (newStart < prev.endTime) {
+                newStart = std::max(newStart, std::min(prev.endTime, prev.startTime + minDuration));
+                if (newStart < prev.endTime) {
+                    prev.endTime = newStart;
+                    prev.dirty = true;
+                    neighbour = idx - 1;
+                }
+            }
+        }
+        note.startTime = newStart;
+    } else {
+        double newEnd = juce::jlimit(editRange.startSeconds, editRange.endSeconds,
+                                     note.endTime + direction * step);
+        newEnd = std::max(newEnd, note.startTime + minDuration);
+        if (idx + 1 < count) {
+            auto& next = work[static_cast<size_t>(idx + 1)];
+            if (newEnd > next.startTime) {
+                newEnd = std::min(newEnd, std::max(next.startTime, next.endTime - minDuration));
+                if (newEnd > next.startTime) {
+                    next.startTime = newEnd;
+                    next.dirty = true;
+                    neighbour = idx + 1;
+                }
+            }
+        }
+        note.endTime = newEnd;
+    }
+
+    const auto& old = notes[static_cast<size_t>(idx)];
+    // Limit reached (minimum length, neighbour or clip edge): stay silent, as at list ends.
+    if (note.startTime == old.startTime && note.endTime == old.endTime)
+        return;
+    note.dirty = true;
+
+    // Recalculate over the old and the new extent of both notes, as the mouse path does,
+    // so correction is also removed where the note no longer reaches.
+    double dirtyStart = std::min(old.startTime, note.startTime);
+    double dirtyEnd = std::max(old.endTime, note.endTime);
+    if (neighbour >= 0) {
+        const auto& oldN = notes[static_cast<size_t>(neighbour)];
+        const auto& newN = work[static_cast<size_t>(neighbour)];
+        dirtyStart = std::min({ dirtyStart, oldN.startTime, newN.startTime });
+        dirtyEnd = std::max({ dirtyEnd, oldN.endTime, newN.endTime });
+    }
+
+    ctx_.beginNoteDraft();
+    auto& draft = ctx_.getNoteDraft();
+    draft.contentDirty = true;
+    draft.workingNotes = work;
+    ctx_.setUndoDescription(LOC_RAW("Resize note"));
+    const auto contentSnapshot = ctx_.getEditableContentSnapshot();
+    const F0FrameRange f0Range = ctx_.getF0Timeline().rangeForTimes(dirtyStart, dirtyEnd);
+    bool committed = false;
+    if (contentSnapshot != nullptr && contentSnapshot->pitchCurve != nullptr && !f0Range.isEmpty())
+        committed = commitNoteBasedCorrection(ctx_, work, f0Range);
+    else
+        committed = ctx_.commitNoteDraft();
+    ctx_.clearNoteDraft();
+    if (!committed) {
+        ctx_.setUndoDescription({});
+        return;
+    }
+    if (ctx_.invalidateLiveNotes) ctx_.invalidateLiveNotes(notes, committedNotes(ctx_));
+    notifyKeyboardNote(KeyboardNoteEvent::NoteResized, committedNotes(ctx_), idx);
 }
 
 // Shift+Left/Right, as in Windows lists: the anchor stays, the other end moves one note.

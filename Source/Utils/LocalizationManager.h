@@ -954,6 +954,7 @@ inline juce::String get(Language lang, const char* key)
         { "Nothing to paste", "Nothing to paste", "没有可粘贴的内容", "貼り付けるものがありません", "Нечего вставлять", "Nada que pegar" },
         { "Notes pasted: {0}, start {1} s", "Notes pasted: {0}, start {1} s", "已粘贴音符：{0}，开始 {1} 秒", "貼り付けたノート：{0}、開始 {1} 秒", "Вставлено нот: {0}, начало {1} с", "Notas pegadas: {0}, inicio {1} s" },
         { "Notes selected: {0}, {1}", "Notes selected: {0}, {1}", "已选择音符：{0}，{1}", "選択したノート：{0}、{1}", "Выбрано нот: {0}, {1}", "Notas seleccionadas: {0}, {1}" },
+        { "Select a single note", "Select a single note", "请只选择一个音符", "ノートを1つだけ選択してください", "Выберите одну ноту", "Seleccione una sola nota" },
         { "volume {0}", "volume {0}", "音量 {0}", "音量 {0}", "громкость {0}", "volumen {0}" },
         { "{0} dB", "{0} dB", "{0} dB", "{0} dB", "{0} дБ", "{0} dB" },
         { "Notes removed: {0}", "Notes removed: {0}", "已删除音符：{0}", "削除したノート：{0}", "Удалено нот: {0}", "Notas eliminadas: {0}" },
