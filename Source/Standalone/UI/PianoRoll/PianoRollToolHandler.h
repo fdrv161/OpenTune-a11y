@@ -103,7 +103,8 @@ public:
         NoAdjacentNote,     // J: no touching next note
         AllSelected,        // Ctrl+A: all notes selected
         ModulationChanged,  // arrows or Enter with the Pitch Modulation tool
-        DriftChanged        // arrows or Enter with the Pitch Drift tool
+        DriftChanged,       // arrows or Enter with the Pitch Drift tool
+        Removed             // Delete or Cut: index is the number of removed notes
     };
 
     // PianoRoll 组件提供的回调上下文。

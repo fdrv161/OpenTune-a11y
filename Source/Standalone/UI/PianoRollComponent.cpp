@@ -5797,6 +5797,9 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             a11y::announce(*this, Loc::format(LOC_RAW("All notes selected: {0}"),
                                               juce::String(static_cast<int>(notes.size()))));
             return;
+        case Event::Removed:
+            a11y::announce(*this, Loc::format(LOC_RAW("Notes removed: {0}"), juce::String(index)));
+            return;
     }
 }
 

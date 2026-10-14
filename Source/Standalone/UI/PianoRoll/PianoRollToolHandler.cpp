@@ -1601,6 +1601,9 @@ void PianoRollToolHandler::handleDeleteKey()
 
     if (selectedIndices.empty()) {
         ctx_.clearNoteDraft();
+        // Otherwise Delete did nothing and said nothing.
+        notifyKeyboardNote(beforeNotes.empty() ? KeyboardNoteEvent::NoNotes : KeyboardNoteEvent::NoSelection,
+                           beforeNotes, -1);
         return;
     }
 
@@ -1677,6 +1680,9 @@ void PianoRollToolHandler::handleDeleteKey()
 
     if (committed) {
         if (ctx_.invalidateLiveNotes) ctx_.invalidateLiveNotes(beforeNotes, committedNotes(ctx_));
+        // Delete also sits on Backspace and "1", so an accidental press must be heard.
+        notifyKeyboardNote(KeyboardNoteEvent::Removed, committedNotes(ctx_),
+                           static_cast<int>(selectedIndices.size()));
         return;
     }
 
