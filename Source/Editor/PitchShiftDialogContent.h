@@ -250,7 +250,8 @@ private:
 
     juce::Label semitoneLabel_;
     juce::Label centsLabel_;
-    // Keyboard slider: arrows change by 1, Page Up/Down by pageStep, Home/End go to the limits.
+    // Keyboard slider: arrows change by 1, Page Up/Down by pageStep, Home/End go to the limits,
+    // Backspace to 0. Enter stays the dialog's OK, as in every dialog.
     // The new value is spoken, because NVDA does not read JUCE's own value change here.
     class StepSlider final : public juce::Slider
     {
@@ -273,6 +274,7 @@ private:
             // Home is the top and End the bottom, as in the EQ knobs (user's choice).
             else if (code == juce::KeyPress::homeKey)                                     target = getMaximum();
             else if (code == juce::KeyPress::endKey)                                      target = getMinimum();
+            else if (code == juce::KeyPress::backspaceKey)                                target = 0.0;
             else
                 return juce::Slider::keyPressed(key);
 

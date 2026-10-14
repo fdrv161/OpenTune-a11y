@@ -5,6 +5,7 @@
 #include "Standalone/UI/UIColors.h"
 #include "Inference/ModelFactory.h"
 #include "Utils/AccessibleComboBox.h"
+#include "Utils/AccessibleKnob.h"
 #include "Utils/KeyShortcutConfig.h"
 #include "Utils/LocalizationManager.h"
 #include "Utils/ModelPathResolver.h"
@@ -478,7 +479,10 @@ public:
                                    ZoomSensitivityConfig::kMaxHorizontalZoomFactor,
                                    0.01);
         horizontalSlider_.setValue(zoomSettings_.horizontalZoomFactor, juce::dontSendNotification);
-        horizontalSlider_.onValueChange = [this] {
+        // Accessibility: key steps (normal, Alt, Page) and the Backspace default, as all sliders.
+        horizontalSlider_.setKeySteps(0.05, 0.01, 0.2);
+        horizontalSlider_.setResetValue(ZoomSensitivityConfig::kDefaultHorizontalZoomFactor);
+        horizontalSlider_.onCommit = [this] {
             zoomSettings_.horizontalZoomFactor = static_cast<float>(horizontalSlider_.getValue());
             persistZoom();
         };
@@ -491,7 +495,9 @@ public:
                                  ZoomSensitivityConfig::kMaxVerticalZoomFactor,
                                  0.01);
         verticalSlider_.setValue(zoomSettings_.verticalZoomFactor, juce::dontSendNotification);
-        verticalSlider_.onValueChange = [this] {
+        verticalSlider_.setKeySteps(0.05, 0.01, 0.2);
+        verticalSlider_.setResetValue(ZoomSensitivityConfig::kDefaultVerticalZoomFactor);
+        verticalSlider_.onCommit = [this] {
             zoomSettings_.verticalZoomFactor = static_cast<float>(verticalSlider_.getValue());
             persistZoom();
         };
@@ -504,7 +510,9 @@ public:
                                ZoomSensitivityConfig::kMaxScrollSpeed,
                                1.0);
         scrollSlider_.setValue(zoomSettings_.scrollSpeed, juce::dontSendNotification);
-        scrollSlider_.onValueChange = [this] {
+        scrollSlider_.setKeySteps(5.0, 1.0, 30.0);
+        scrollSlider_.setResetValue(ZoomSensitivityConfig::kDefaultScrollSpeed);
+        scrollSlider_.onCommit = [this] {
             zoomSettings_.scrollSpeed = static_cast<float>(scrollSlider_.getValue());
             persistZoom();
         };
@@ -515,7 +523,9 @@ public:
         addAndMakeVisible(tuningLabel_);
         tuningSlider_.setRange(TuningConfig::kMinTuningHz, TuningConfig::kMaxTuningHz, 1.0);
         tuningSlider_.setValue(appPreferences_.getState().shared.tuning.tuningHz, juce::dontSendNotification);
-        tuningSlider_.onValueChange = [this] {
+        tuningSlider_.setKeySteps(1.0, 1.0, 10.0);
+        tuningSlider_.setResetValue(TuningConfig::kDefaultTuningHz);
+        tuningSlider_.onCommit = [this] {
             TuningConfig::TuningSettings tuning;
             tuning.tuningHz = static_cast<float>(tuningSlider_.getValue());
             appPreferences_.setTuning(tuning);
@@ -657,13 +667,13 @@ private:
     juce::Label schemeLabel_;
     a11y::AccessibleComboBox schemeSelector_;
     juce::Label horizontalLabel_;
-    juce::Slider horizontalSlider_;
+    a11y::AccessibleKnob horizontalSlider_;
     juce::Label verticalLabel_;
-    juce::Slider verticalSlider_;
+    a11y::AccessibleKnob verticalSlider_;
     juce::Label scrollLabel_;
-    juce::Slider scrollSlider_;
+    a11y::AccessibleKnob scrollSlider_;
     juce::Label tuningLabel_;
-    juce::Slider tuningSlider_;
+    a11y::AccessibleKnob tuningSlider_;
     juce::TextButton resetButton_;
     juce::Label gridStyleLabel_;
     a11y::AccessibleComboBox gridStyleSelector_;
@@ -799,7 +809,9 @@ public:
 
         backgroundBrightnessSlider_.setRange(0.0, 2.0, 0.01);
         backgroundBrightnessSlider_.setValue(visualPreferences.backgroundBrightness, juce::dontSendNotification);
-        backgroundBrightnessSlider_.onValueChange = [this] {
+        backgroundBrightnessSlider_.setKeySteps(0.05, 0.01, 0.25);
+        backgroundBrightnessSlider_.setResetValue(1.0);
+        backgroundBrightnessSlider_.onCommit = [this] {
             appPreferences_.setBackgroundBrightness(static_cast<float>(backgroundBrightnessSlider_.getValue()));
             notifyChanged();
         };
@@ -934,7 +946,7 @@ private:
     a11y::AccessibleComboBox noteNameModeSelector_;
     juce::ToggleButton showUnvoicedFramesToggle_;
     juce::Label backgroundBrightnessLabel_;
-    juce::Slider backgroundBrightnessSlider_;
+    a11y::AccessibleKnob backgroundBrightnessSlider_;
     juce::Label correctedF0ColourLabel_;
     ColourSwatchButton correctedF0ColourButton_;
     juce::Label originalF0ColourLabel_;

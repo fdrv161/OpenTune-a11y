@@ -2121,7 +2121,10 @@ bool EqPopupComponent::handleKnobKey(EqKnob& knob, const juce::KeyPress& key)
         return true;
     }
 
-    const double next = steppedKnobValue(knob, key);
+    // Backspace: the default, the same value as a double click (1000 Hz, 0 dB, Q 1).
+    double next = isPlainKey(key, juce::KeyPress::backspaceKey) && knob.isDoubleClickReturnEnabled()
+                      ? juce::jlimit(knob.getMinimum(), knob.getMaximum(), knob.getDoubleClickReturnValue())
+                      : steppedKnobValue(knob, key);
     // At the edge the value does not change and NVDA says nothing.
     if (next != knob.getValue())
     {
