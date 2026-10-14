@@ -4025,7 +4025,14 @@ void PianoRollComponent::onScrollVBlankCallback(double timestampSec)
     if (playStateChanged) {
         userScrollHold_ = false;
         lastObservedPlayHeadPlaying_ = playingNow;
+        // Accessibility: remember where playback stopped (see stoppedEditCursorTimeline).
+        stopPositionValid_ = !playingNow;
+        stopPositionSeconds_ = playHeadState_.getPresentedPositionSeconds();
+        editCursorAtStop_.reset();
     }
+    // REAPER reports "stopped" a little after the plugin sees it; take its edit cursor then.
+    if (stopPositionValid_ && !editCursorAtStop_ && processor_ != nullptr)
+        editCursorAtStop_ = processor_->getStoppedEditCursorSeconds();
 
     double playheadTime = playHeadState_.getPresentedPositionSeconds();
     if (pendingSeekTime_ >= 0.0) {
@@ -5139,11 +5146,24 @@ void PianoRollComponent::copySelectedNotes()
                                       juce::String(static_cast<int>(notesClipboard_.size()))));
 }
 
-std::optional<double> PianoRollComponent::stoppedEditCursorSourceTime() const
+std::optional<double> PianoRollComponent::stoppedEditCursorTimeline() const
 {
     if (processor_ == nullptr)
         return std::nullopt;
     const auto cursor = processor_->getStoppedEditCursorSeconds();
+    if (!cursor)
+        return std::nullopt;
+    // Stopped with Space in the plugin, REAPER may leave its edit cursor where playback
+    // began (or move it only later). While nobody has moved the cursor since that stop,
+    // the place where playback stopped is what the user means.
+    if (stopPositionValid_ && editCursorAtStop_ && std::abs(*editCursorAtStop_ - *cursor) < 1.0e-6)
+        return stopPositionSeconds_;
+    return cursor;
+}
+
+std::optional<double> PianoRollComponent::stoppedEditCursorSourceTime() const
+{
+    const auto cursor = stoppedEditCursorTimeline();
     if (!cursor)
         return std::nullopt;
     // Project (timeline) seconds to the clip's source seconds, as for the playhead in pasteNotes.
@@ -5174,7 +5194,7 @@ void PianoRollComponent::pasteNotes()
     double pasteStartTime = 0.0;
     // Accessibility: with REAPER stopped the plugin's playhead is where playback last
     // stopped, not where the user moved the edit cursor; ask REAPER for the cursor then.
-    const auto stoppedCursor = processor_->getStoppedEditCursorSeconds();
+    const auto stoppedCursor = stoppedEditCursorTimeline();
     const double playheadTime = stoppedCursor.value_or(playHeadState_.getPresentedPositionSeconds());
     if (playheadTime > 0.0) {
         const auto projection = activeContentProjection();
