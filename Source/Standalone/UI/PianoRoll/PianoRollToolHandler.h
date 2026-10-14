@@ -104,7 +104,8 @@ public:
         AllSelected,        // Ctrl+A: all notes selected
         ModulationChanged,  // arrows or Enter with the Pitch Modulation tool
         DriftChanged,       // arrows or Enter with the Pitch Drift tool
-        Removed             // Delete or Cut: index is the number of removed notes
+        Removed,            // Delete or Cut: index is the number of removed notes
+        VolumeChanged       // arrows or Enter with the Volume Envelope tool
     };
 
     // PianoRoll 组件提供的回调上下文。
@@ -335,6 +336,8 @@ private:
     void splitSelectedNoteByKeyboard();
     void mergeSelectedNoteWithNext();
     void adjustSelectedNotesModDriftByKeyboard(int direction, bool fine);
+    void adjustSelectedNotesVolumeByKeyboard(int direction, bool fine);
+    void resetSelectedNotesVolumeByKeyboard();
     bool applyNoteDefaultActionByKeyboard();
     void switchToolFromKeyboard(ToolId tool);
     bool commitKeyboardNoteEdit(const std::vector<Note>& work, const std::vector<int>& changedIndices,

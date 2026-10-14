@@ -948,6 +948,8 @@ inline juce::String get(Language lang, const char* key)
         { "Redone: {0}", "Redone: {0}", "已重做：{0}", "やり直しました：{0}", "Повторено: {0}", "Rehecho: {0}" },
         { "Nothing to undo", "Nothing to undo", "没有可撤销的操作", "元に戻す操作はありません", "Нечего отменять", "Nada que deshacer" },
         { "Nothing to redo", "Nothing to redo", "没有可重做的操作", "やり直す操作はありません", "Нечего повторять", "Nada que rehacer" },
+        { "volume {0}", "volume {0}", "音量 {0}", "音量 {0}", "громкость {0}", "volumen {0}" },
+        { "{0} dB", "{0} dB", "{0} dB", "{0} dB", "{0} дБ", "{0} dB" },
         { "Notes removed: {0}", "Notes removed: {0}", "已删除音符：{0}", "削除したノート：{0}", "Удалено нот: {0}", "Notas eliminadas: {0}" },
         { "Play the note after a keyboard edit", "Play the note after a keyboard edit", "键盘编辑后播放音符", "キーボード編集後にノートを再生", "Проигрывать ноту после правки с клавиатуры", "Reproducir la nota tras editar con el teclado" },
         { "Copied to clipboard", "Copied to clipboard", "已复制到剪贴板", "クリップボードにコピーしました", "Скопировано в буфер обмена", "Copiado al portapapeles" },

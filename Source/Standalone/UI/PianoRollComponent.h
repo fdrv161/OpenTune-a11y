@@ -699,6 +699,7 @@ private:
     juce::String keyboardToolName(ToolId tool) const;
     juce::String modulationPercentText(const Note& note) const;
     juce::String driftPercentText(const Note& note) const;
+    juce::String volumeText(const Note& note) const;
     void scheduleAuditionAfterRender(int noteIndex);
     void tickPendingAudition();
     RenderCacheProvider renderCacheProvider_;

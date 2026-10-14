@@ -873,6 +873,9 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
         // Like mouse dragging: the arrows change whatever the current tool edits.
         if (openDyne && (currentTool_ == ToolId::PitchModulation || currentTool_ == ToolId::PitchDrift))
             adjustSelectedNotesModDriftByKeyboard(direction, shiftOnly);
+        else if (openDyne && currentTool_ == ToolId::VolumeEnvelope)
+            // 1 dB per press, Shift 0.1 dB.
+            adjustSelectedNotesVolumeByKeyboard(direction, shiftOnly);
         else
             // Shift: fine adjustment by 1 cent.
             moveSelectedNotesPitchByKeyboard(direction, shiftOnly);
@@ -1274,6 +1277,12 @@ bool PianoRollToolHandler::applyNoteDefaultActionByKeyboard()
     const auto selected = collectSelectedNoteIndices(notes);
     if (selected.empty())
         return false;
+
+    // Volume Envelope: the double-click resets the note to 0 dB.
+    if (currentTool_ == ToolId::VolumeEnvelope) {
+        resetSelectedNotesVolumeByKeyboard();
+        return true;
+    }
 
     std::vector<Note> work = notes;
     std::vector<int> changed;
@@ -3077,6 +3086,53 @@ void PianoRollToolHandler::handleVolumeEnvelopeToolDoubleClick(const juce::Mouse
         return;
     if (ctx_.commitVolumeEnvelope)
         ctx_.commitVolumeEnvelope(snap->volumeEnvelope, std::move(envelope));
+}
+
+// Keyboard version of the Volume Envelope drag: every selected note keeps its own level
+// and gets the same step, exactly like buildVolumeEnvelopeDragPreview.
+void PianoRollToolHandler::adjustSelectedNotesVolumeByKeyboard(int direction, bool fine)
+{
+    const auto& notes = committedNotes(ctx_);
+    const auto selected = collectSelectedNoteIndices(notes);
+    if (selected.empty()) {
+        notifyKeyboardNote(notes.empty() ? KeyboardNoteEvent::NoNotes : KeyboardNoteEvent::NoSelection, notes, -1);
+        return;
+    }
+    const auto snap = ctx_.getEditableContentSnapshot();
+    if (!snap || !ctx_.commitVolumeEnvelope)
+        return;
+
+    const float step = static_cast<float>(direction) * (fine ? 0.1f : 1.0f);
+    AutomationLane envelope = snap->volumeEnvelope;
+    for (int index : selected) {
+        const auto& note = notes[static_cast<size_t>(index)];
+        envelope.setRegionGain(note.startTime, note.endTime,
+                               snap->volumeEnvelope.evalAt(note.startTime) + step);
+    }
+    if (envelope == snap->volumeEnvelope)
+        return;
+    ctx_.commitVolumeEnvelope(snap->volumeEnvelope, std::move(envelope));
+    notifyKeyboardNote(KeyboardNoteEvent::VolumeChanged, committedNotes(ctx_), selected.front());
+}
+
+// Enter with the Volume Envelope tool, like its double-click: back to 0 dB.
+void PianoRollToolHandler::resetSelectedNotesVolumeByKeyboard()
+{
+    const auto& notes = committedNotes(ctx_);
+    const auto selected = collectSelectedNoteIndices(notes);
+    const auto snap = ctx_.getEditableContentSnapshot();
+    if (selected.empty() || !snap || !ctx_.commitVolumeEnvelope)
+        return;
+
+    AutomationLane envelope = snap->volumeEnvelope;
+    for (int index : selected) {
+        const auto& note = notes[static_cast<size_t>(index)];
+        envelope.setRegionGain(note.startTime, note.endTime, 0.0f);
+    }
+    // Already at 0 dB: nothing is committed, but still say the level.
+    if (!(envelope == snap->volumeEnvelope))
+        ctx_.commitVolumeEnvelope(snap->volumeEnvelope, std::move(envelope));
+    notifyKeyboardNote(KeyboardNoteEvent::VolumeChanged, committedNotes(ctx_), selected.front());
 }
 
 void PianoRollToolHandler::updateScissorsPreview(const juce::MouseEvent& e)

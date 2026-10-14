@@ -5711,6 +5711,8 @@ juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& n
             line << ", " << Loc::format(LOC_RAW("modulation {0}"), modulationPercentText(note));
         else if (currentTool_ == ToolId::PitchDrift)
             line << ", " << Loc::format(LOC_RAW("drift {0}"), driftPercentText(note));
+        else if (currentTool_ == ToolId::VolumeEnvelope)
+            line << ", " << Loc::format(LOC_RAW("volume {0}"), volumeText(note));
         return line;
     }
 
@@ -5732,9 +5734,22 @@ juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& n
                                 juce::String(timelineStart, 2), juce::String(timelineEnd - timelineStart, 2));
     if (isOpenDyne()) {
         line << ", " << Loc::format(LOC_RAW("modulation {0}"), modulationPercentText(note))
-             << ", " << Loc::format(LOC_RAW("drift {0}"), driftPercentText(note));
+             << ", " << Loc::format(LOC_RAW("drift {0}"), driftPercentText(note))
+             << ", " << Loc::format(LOC_RAW("volume {0}"), volumeText(note));
     }
     return line;
+}
+
+// Note level from the volume envelope (the same value the Volume Envelope drag edits).
+juce::String PianoRollComponent::volumeText(const Note& note) const
+{
+    const auto snap = readEditedSnapshot();
+    const float db = snap != nullptr ? snap->volumeEnvelope.evalAt(note.startTime) : 0.0f;
+    // Round to 0.1 dB so tiny ramps do not read as "-0.0".
+    const float rounded = std::round(db * 10.0f) / 10.0f;
+    juce::String value = std::abs(rounded) < 0.05f ? juce::String("0")
+                                                   : (rounded > 0.0f ? "+" : "") + juce::String(rounded, 1);
+    return Loc::format(LOC_RAW("{0} dB"), value);
 }
 
 void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEvent event,
@@ -5796,6 +5811,13 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
         case Event::AllSelected:
             a11y::announce(*this, Loc::format(LOC_RAW("All notes selected: {0}"),
                                               juce::String(static_cast<int>(notes.size()))));
+            return;
+        case Event::VolumeChanged:
+            if (index >= 0 && index < static_cast<int>(notes.size())) {
+                // Only the new level, like the other value edits.
+                a11y::announce(*this, volumeText(notes[static_cast<size_t>(index)]));
+                scheduleAuditionAfterRender(index);
+            }
             return;
         case Event::Removed:
             a11y::announce(*this, Loc::format(LOC_RAW("Notes removed: {0}"), juce::String(index)));
