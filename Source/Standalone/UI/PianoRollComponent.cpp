@@ -4851,11 +4851,16 @@ void PianoRollComponent::copySelectedNotes()
         if (idx >= 0 && idx < static_cast<int>(notes.size()))
             notesClipboard_.push_back(notes[static_cast<size_t>(idx)]);
     }
+    a11y::announce(*this, Loc::format(LOC_RAW("Notes copied: {0}"),
+                                      juce::String(static_cast<int>(notesClipboard_.size()))));
 }
 
 void PianoRollComponent::pasteNotes()
 {
-    if (notesClipboard_.empty()) return;
+    if (notesClipboard_.empty()) {
+        a11y::announce(*this, LOC_RAW("Nothing to paste"));
+        return;
+    }
     if (contentCommands_ == nullptr || !editedContentKey_.isValid()) return;
 
     const auto& notes = getCommittedNotes();
@@ -4949,6 +4954,12 @@ void PianoRollComponent::pasteNotes()
 
     requestContentRedraw();
     overlay_->repaint();
+
+    // Paste lands at the plugin's playhead, which goes stale while the host is stopped,
+    // so say where the notes went (project time, as in the host).
+    a11y::announce(*this, Loc::format(LOC_RAW("Notes pasted: {0}, start {1} s"),
+                                      juce::String(static_cast<int>(pastedNotes.size())),
+                                      juce::String(sourceTimeToTimelineTime(pasteStartTime), 2)));
 }
 
 void PianoRollComponent::duplicateNotes()
