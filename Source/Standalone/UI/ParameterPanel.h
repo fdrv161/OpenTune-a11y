@@ -54,7 +54,8 @@ public:
                           float rotaryEndAngle, juce::Slider& slider) override;
 };
 
-class ParameterPanel : public juce::Component
+class ParameterPanel : public juce::Component,
+                       private juce::FocusChangeListener
 {
 public:
     struct AutoButtonPresentation {
@@ -180,6 +181,10 @@ private:
     // ── 滚动结构：面板 chrome 固定 → 单个 Viewport → 单个内容组件 ──
     juce::Viewport viewport_;
     ContentComponent contentComponent_;
+
+    // Tab can land on a control scrolled out of the panel (NVDA reported Pitch snap as
+    // "offscreen"): scroll it into view.
+    void globalFocusChanged(juce::Component* focusedComponent) override;
 
     // Pitch Correction Section
     juce::Label pitchCorrectionHeader_;

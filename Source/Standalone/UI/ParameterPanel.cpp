@@ -627,6 +627,7 @@ ParameterPanel::ParameterPanel()
                            &vibratoRateLabel_, &noteSplitLabel_, &toolsHeader_ })
         caption->setAccessible(false);
     applyAccessibilityTitles();
+    juce::Desktop::getInstance().addFocusChangeListener(this);
 }
 
 // Screen reader names: knob captions are separate Labels, so the value boxes
@@ -660,6 +661,7 @@ void ParameterPanel::applyAccessibilityTitles()
 
 ParameterPanel::~ParameterPanel()
 {
+    juce::Desktop::getInstance().removeFocusChangeListener(this);
     retuneSpeedSlider_.setLookAndFeel(nullptr);
     vibratoDepthSlider_.setLookAndFeel(nullptr);
     vibratoRateSlider_.setLookAndFeel(nullptr);
@@ -1204,6 +1206,18 @@ void ParameterPanel::revealControl(juce::Component& control)
         targetY = bounds.getBottom() - visible.getHeight();
     if (targetY != currentY)
         viewport_.setViewPosition(viewport_.getViewPositionX(), targetY);
+}
+
+void ParameterPanel::globalFocusChanged(juce::Component* focusedComponent)
+{
+    // revealControl works with direct children of the content, so climb up from
+    // inner parts such as a knob value editor.
+    for (auto* c = focusedComponent; c != nullptr; c = c->getParentComponent()) {
+        if (c->getParentComponent() == &contentComponent_) {
+            revealControl(*c);
+            return;
+        }
+    }
 }
 
 int ParameterPanel::getContentScrollY() const { return viewport_.getViewPositionY(); }
