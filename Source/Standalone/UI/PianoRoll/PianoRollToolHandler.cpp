@@ -1893,8 +1893,18 @@ void PianoRollToolHandler::handleDeleteKey()
 
     if (committed) {
         if (ctx_.invalidateLiveNotes) ctx_.invalidateLiveNotes(beforeNotes, committedNotes(ctx_));
+        // Accessibility: keep the place in the note list. The note after the removed ones
+        // (or the last note) becomes selected, so the arrows go on from here.
+        const auto& afterNotes = committedNotes(ctx_);
+        if (!afterNotes.empty()) {
+            const int firstRemoved = *std::min_element(selectedIndices.begin(), selectedIndices.end());
+            const int neighbour = juce::jmin(firstRemoved, static_cast<int>(afterNotes.size()) - 1);
+            ctx_.getState().noteSelection.setSingle(neighbour, static_cast<int>(afterNotes.size()));
+            if (ctx_.invalidateSelectionFeedback)
+                ctx_.invalidateSelectionFeedback();
+        }
         // Delete also sits on Backspace and "1", so an accidental press must be heard.
-        notifyKeyboardNote(KeyboardNoteEvent::Removed, committedNotes(ctx_),
+        notifyKeyboardNote(KeyboardNoteEvent::Removed, afterNotes,
                            static_cast<int>(selectedIndices.size()));
         return;
     }

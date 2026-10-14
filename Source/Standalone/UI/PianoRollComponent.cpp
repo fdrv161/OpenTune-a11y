@@ -5808,6 +5808,8 @@ std::unique_ptr<juce::AccessibilityHandler> PianoRollComponent::createAccessibil
                                                               PianoRollComponent::NoteDetail::Navigation);
                 if (line.isNotEmpty())
                     title << ", " << line;
+            } else if (selected.size() > 1) {
+                title << ", " << Loc::format(LOC_RAW("{0} selected"), juce::String(static_cast<int>(selected.size())));
             }
             return title;
         }
@@ -6022,8 +6024,18 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             }
             return;
         case Event::Removed:
-            a11y::announce(*this, Loc::format(LOC_RAW("Notes removed: {0}"), juce::String(index)));
+        {
+            // Then the note that took the place of the removed ones, if any.
+            juce::String text = Loc::format(LOC_RAW("Notes removed: {0}"), juce::String(index));
+            const auto& selected = interactionState_.noteSelection.selectedIndices;
+            if (selected.size() == 1) {
+                const auto line = describeKeyboardNote(notes, selected.front(), NoteDetail::Navigation);
+                if (line.isNotEmpty())
+                    text << ", " << line;
+            }
+            a11y::announce(*this, text);
             return;
+        }
     }
 }
 
@@ -6134,6 +6146,10 @@ void PianoRollComponent::tickPendingAudition()
         return;
 
     pendingAuditionTimer_->stopTimer();
+    // After the wait the render may still be running: the note then plays the old sound,
+    // so say so instead of letting it pass for the result.
+    if (!settled)
+        a11y::announce(*this, LOC_RAW("Not rendered yet"));
     const auto& notes = getCommittedNotes();
     if (pendingAuditionNoteIndex_ >= 0 && pendingAuditionNoteIndex_ < static_cast<int>(notes.size()))
         auditionNote(notes[static_cast<size_t>(pendingAuditionNoteIndex_)]);

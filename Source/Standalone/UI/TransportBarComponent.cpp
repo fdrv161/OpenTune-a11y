@@ -114,6 +114,50 @@ DigitalTimeDisplay::DigitalTimeDisplay()
     setInterceptsMouseClicks(false, false);
 }
 
+std::unique_ptr<juce::AccessibilityHandler> DigitalTimeDisplay::createAccessibilityHandler()
+{
+    // The title is computed on request, so it is current whenever NVDA reads it.
+    class TimeAccessibilityHandler final : public juce::AccessibilityHandler {
+    public:
+        explicit TimeAccessibilityHandler(DigitalTimeDisplay& owner)
+            : juce::AccessibilityHandler(owner, juce::AccessibilityRole::staticText), owner_(owner) {}
+
+        juce::String getTitle() const override
+        {
+            if (owner_.isBarsMode_)
+                return OpenTune::Loc::format(LOC_RAW("Bar {0}, beat {1}"), juce::String(owner_.bar_),
+                                             juce::String(owner_.beat_));
+            return OpenTune::Loc::format(LOC_RAW("Time {0}"), owner_.timeString_);
+        }
+
+    private:
+        DigitalTimeDisplay& owner_;
+    };
+
+    return std::make_unique<TimeAccessibilityHandler>(*this);
+}
+
+std::unique_ptr<juce::AccessibilityHandler> BpmValueField::createAccessibilityHandler()
+{
+    // In the plugin (ARA) the host owns the tempo and the field is read-only text.
+    class TempoAccessibilityHandler final : public juce::AccessibilityHandler {
+    public:
+        explicit TempoAccessibilityHandler(BpmValueField& owner)
+            : juce::AccessibilityHandler(owner, juce::AccessibilityRole::staticText), owner_(owner) {}
+
+        juce::String getTitle() const override
+        {
+            return OpenTune::Loc::format(LOC_RAW("Tempo {0} BPM, {1}"), owner_.formatBpmText(),
+                                         juce::String(owner_.timeSigNum_) + "/" + juce::String(owner_.timeSigDenom_));
+        }
+
+    private:
+        BpmValueField& owner_;
+    };
+
+    return std::make_unique<TempoAccessibilityHandler>(*this);
+}
+
 void DigitalTimeDisplay::setTimeString(const juce::String& time)
 {
     if (timeString_ != time || isBarsMode_)

@@ -154,6 +154,7 @@ private:
     double steppedKnobValue(const EqKnob& knob, const juce::KeyPress& key) const;
     juce::String describeRow(KeyRow row) const;
     juce::String describeBandAndRow() const;
+    juce::String describeAllBands() const;
     static juce::String filterTypeName(EqFilterType type);
     void scheduleCommit();
 

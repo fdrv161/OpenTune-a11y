@@ -1750,6 +1750,28 @@ juce::String EqPopupComponent::describeRow(KeyRow row) const
     return {};
 }
 
+juce::String EqPopupComponent::describeAllBands() const
+{
+    juce::String text = Loc::format(LOC_RAW("Bands: {0}"), juce::String(static_cast<int>(settings_.filters.size())));
+    if (!settings_.active)
+        text << ", " << LOC_RAW("EQ bypassed");
+    for (size_t i = 0; i < settings_.filters.size(); ++i)
+    {
+        const auto& f = settings_.filters[i];
+        text << ". " << juce::String(static_cast<int>(i) + 1) << ": " << filterTypeName(f.type)
+             << ", " << juce::String(juce::roundToInt(f.frequencyHz)) << " Hz";
+        if (f.type != EqFilterType::LowCut && f.type != EqFilterType::HighCut)
+        {
+            const float gain = std::abs(f.gainDb) < 0.05f ? 0.0f : f.gainDb;
+            text << ", " << Loc::format(LOC_RAW("{0} dB"), juce::String(gain > 0.0f ? "+" : "") + juce::String(gain, 1));
+        }
+        text << ", Q " << juce::String(f.q, 2);
+        if (f.bypassed)
+            text << ", " << LOC_RAW("bypassed");
+    }
+    return text;
+}
+
 juce::String EqPopupComponent::describeBandAndRow() const
 {
     const int band = keyBand();
@@ -1843,6 +1865,12 @@ bool EqPopupComponent::keyPressed(const juce::KeyPress& key)
     if (isPlainKey(key, juce::KeyPress::deleteKey))
     {
         removeBandFromKeyboard();
+        return true;
+    }
+    // I: all bands at once, like I on a note reads all its details.
+    if ((code == 'I' || code == 'i') && !mods.isAnyModifierKeyDown())
+    {
+        a11y::announce(*this, describeAllBands());
         return true;
     }
     // Everything else stays in the window, so it cannot edit the notes behind it.
