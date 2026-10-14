@@ -1265,14 +1265,23 @@ void OpenTuneAudioProcessorEditor::applyThemeToEditor(ThemeId themeId)
 
 void OpenTuneAudioProcessorEditor::undoRequested()
 {
-    if (processorRef_.getUndoManager().undo() != nullptr)
+    // Доступность: зрячий видит, что вернулось; скринридеру говорим, какое действие отменено.
+    if (auto* action = processorRef_.getUndoManager().undo()) {
         syncContentProjectionToPianoRoll();
+        a11y::announce(pianoRoll_, Loc::format(LOC_RAW("Undone: {0}"), action->getDescription()));
+    } else {
+        a11y::announce(pianoRoll_, LOC_RAW("Nothing to undo"));
+    }
 }
 
 void OpenTuneAudioProcessorEditor::redoRequested()
 {
-    if (processorRef_.getUndoManager().redo() != nullptr)
+    if (auto* action = processorRef_.getUndoManager().redo()) {
         syncContentProjectionToPianoRoll();
+        a11y::announce(pianoRoll_, Loc::format(LOC_RAW("Redone: {0}"), action->getDescription()));
+    } else {
+        a11y::announce(pianoRoll_, LOC_RAW("Nothing to redo"));
+    }
 }
 
 void OpenTuneAudioProcessorEditor::mouseTrailThemeChanged(MouseTrailConfig::TrailTheme theme)
