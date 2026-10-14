@@ -245,6 +245,9 @@ public:
     bool getSingleSelectedNoteParameters(float& retuneSpeedPercent, float& vibratoDepth, float& vibratoRate) const;
 
     AudioEditingScheme::ParameterEditResult editParameter(AudioEditingScheme::ParameterId id, float value);
+    // Accessibility: what a parameter knob change did, for speech ("Applied to notes: 3").
+    juce::String describeParameterEdit(AudioEditingScheme::ParameterId id,
+                                       const AudioEditingScheme::ParameterEditResult& result) const;
     void setCreationDefault(AudioEditingScheme::ParameterId id, float value);
 
     NoteGeneratorParams getCurrentAutoTuneParams() const noexcept

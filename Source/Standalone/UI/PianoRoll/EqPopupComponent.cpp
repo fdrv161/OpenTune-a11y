@@ -105,6 +105,9 @@ EqPopupComponent::EqPopupComponent()
     confirmPanel_.setInterceptsMouseClicks(false, false);
     confirmPanel_.onKey = [this](const juce::KeyPress& key) { return handleConfirmKey(key); };
     confirmButton_.setButtonText(LOC_RAW("Confirm"));
+    // The question goes first in the button's name ("Remove EQ? Confirm, button"): NVDA skips
+    // the group name, and an announcement after the focus came after "Confirm button".
+    confirmButton_.setTitle(LOC_RAW("Remove EQ?") + " " + LOC_RAW("Confirm"));
     cancelButton_.setButtonText(LOC(kCancel));
     dontShowToggle_.setButtonText(LOC_RAW("Don't show again"));
     confirmButton_.onClick = [this] { requestRemoveEq(); };
@@ -1943,9 +1946,6 @@ void EqPopupComponent::activateKeyRow()
         {
             showRemoveConfirmation();
             confirmButton_.grabKeyboardFocus();
-            // NVDA says only "Confirm button" and skips the group name (user test), so the
-            // question is spoken as in the other dialogs; keepAll queues it after the focus speech.
-            a11y::announce(confirmButton_, LOC_RAW("Remove EQ?"), a11y::SpeechQueue::keepAll);
         }
         break;
     default:

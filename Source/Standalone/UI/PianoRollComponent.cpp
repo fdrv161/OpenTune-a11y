@@ -235,7 +235,10 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
         handleKeyboardNote(event, notes, index);
     };
     toolCtx.notifyToolChangedFromKeyboard = [this](ToolId tool) {
-        const auto name = keyboardToolName(tool);
+        auto name = keyboardToolName(tool);
+        // The EQ tool does nothing by itself from the keyboard; say how to open the window.
+        if (tool == ToolId::Eq && name.isNotEmpty())
+            name << ", " << LOC_RAW("Enter opens it");
         if (name.isNotEmpty())
             a11y::announce(*this, name);
     };
@@ -2783,6 +2786,26 @@ bool PianoRollComponent::getSingleSelectedNoteParameters(float& retuneSpeedPerce
     vibratoDepth = juce::jlimit(0.0f, 100.0f, resolvedVibratoDepth);
     vibratoRate = juce::jlimit(3.0f, 12.0f, resolvedVibratoRate);
     return true;
+}
+
+juce::String PianoRollComponent::describeParameterEdit(AudioEditingScheme::ParameterId id,
+                                                       const AudioEditingScheme::ParameterEditResult& result) const
+{
+    using Status = AudioEditingScheme::ParameterEditStatus;
+    if (result.status == Status::NoTarget)
+        return LOC_RAW("Default for new notes");
+    if (result.status == Status::Failed) {
+        if (!currentCurve_ || currentF0Timeline().isEmpty())
+            return LOC_RAW("No pitch data, read the audio first");
+        return LOC_RAW("Could not apply");
+    }
+    // Note Split cuts the notes again, so the new count is what changed.
+    if (id == AudioEditingScheme::ParameterId::NoteSplit)
+        return Loc::format(LOC_RAW("Notes now: {0}"), juce::String(static_cast<int>(getCommittedNotes().size())));
+    const auto count = static_cast<int>(interactionState_.noteSelection.selectedIndices.size());
+    if (count > 0)
+        return Loc::format(LOC_RAW("Applied to notes: {0}"), juce::String(count));
+    return LOC_RAW("Applied to the selection");
 }
 
 AudioEditingScheme::ParameterEditResult PianoRollComponent::editParameter(AudioEditingScheme::ParameterId id, float value) {

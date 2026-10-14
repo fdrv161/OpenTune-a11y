@@ -70,6 +70,9 @@ public:
     void vibratoDepthChanged(float value) override;
     void vibratoRateChanged(float value) override;
     void noteSplitChanged(float value) override;
+    // Accessibility: say what a knob change did, when it came from the keyboard.
+    void announceParameterEdit(AudioEditingScheme::ParameterId id,
+                               const AudioEditingScheme::ParameterEditResult& result);
     void toolSelected(int toolId) override;
 
     void importAudioRequested() override;

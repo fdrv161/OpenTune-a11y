@@ -1047,6 +1047,7 @@ void OpenTuneAudioProcessorEditor::retuneSpeedChanged(float speed)
     if (result.status == AudioEditingScheme::ParameterEditStatus::NoTarget) {
         pianoRoll_.setCreationDefault(AudioEditingScheme::ParameterId::RetuneSpeed, normalized);
     }
+    announceParameterEdit(AudioEditingScheme::ParameterId::RetuneSpeed, result);
 }
 
 void OpenTuneAudioProcessorEditor::vibratoDepthChanged(float value)
@@ -1055,6 +1056,7 @@ void OpenTuneAudioProcessorEditor::vibratoDepthChanged(float value)
     if (result.status == AudioEditingScheme::ParameterEditStatus::NoTarget) {
         pianoRoll_.setCreationDefault(AudioEditingScheme::ParameterId::VibratoDepth, value);
     }
+    announceParameterEdit(AudioEditingScheme::ParameterId::VibratoDepth, result);
 }
 
 void OpenTuneAudioProcessorEditor::vibratoRateChanged(float value)
@@ -1063,12 +1065,27 @@ void OpenTuneAudioProcessorEditor::vibratoRateChanged(float value)
     if (result.status == AudioEditingScheme::ParameterEditStatus::NoTarget) {
         pianoRoll_.setCreationDefault(AudioEditingScheme::ParameterId::VibratoRate, value);
     }
+    announceParameterEdit(AudioEditingScheme::ParameterId::VibratoRate, result);
 }
 
 void OpenTuneAudioProcessorEditor::noteSplitChanged(float value)
 {
     // NoTarget 时 editParameter 内部已回落更新创建默认值
-    pianoRoll_.editParameter(AudioEditingScheme::ParameterId::NoteSplit, value);
+    const auto result = pianoRoll_.editParameter(AudioEditingScheme::ParameterId::NoteSplit, value);
+    announceParameterEdit(AudioEditingScheme::ParameterId::NoteSplit, result);
+}
+
+void OpenTuneAudioProcessorEditor::announceParameterEdit(AudioEditingScheme::ParameterId id,
+                                                          const AudioEditingScheme::ParameterEditResult& result)
+{
+    // Only while a panel control has focus (keyboard use). Arrow changes arrive here once the
+    // keys stop (AccessibleKnob), typed values and Backspace at once.
+    auto* focused = juce::Component::getCurrentlyFocusedComponent();
+    if (focused == nullptr || !parameterPanel_.isParentOf(focused))
+        return;
+    const auto text = pianoRoll_.describeParameterEdit(id, result);
+    if (text.isNotEmpty())
+        a11y::announce(*focused, text, a11y::SpeechQueue::keepAll);
 }
 
 void OpenTuneAudioProcessorEditor::toolSelected(int toolId)
