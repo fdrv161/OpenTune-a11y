@@ -1,0 +1,115 @@
+# Windows VST3 build in GitHub Actions.
+# Manual trigger only (Actions tab or `gh workflow run`) to save Actions minutes.
+# Third-party dependencies are not in the repository, so they are downloaded here (see BUILDING.md).
+name: Windows VST3
+
+on:
+  workflow_dispatch:
+    inputs:
+      juce_ref:
+        description: "JUCE branch or tag"
+        default: "master"
+        required: true
+
+concurrency:
+  group: windows-vst3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch dependencies
+        env:
+          JUCE_REF: ${{ inputs.juce_ref }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $tp = 'ThirdParty'
+          New-Item -ItemType Directory -Force $tp | Out-Null
+
+          git clone --depth 1 --branch $env:JUCE_REF https://github.com/juce-framework/JUCE.git JUCE-master
+          git clone --depth 1 --recursive --shallow-submodules --branch releases/2.3.0 `
+            https://github.com/Celemony/ARA_SDK.git "$tp/ARA_SDK-releases-2.3.0"
+
+          # ARA 2.3.0 renamed this file but JUCE still includes the old name (see BUILDING.md).
+          $araCpp = 'JUCE-master/modules/juce_audio_plugin_client/juce_audio_plugin_client_ARA.cpp'
+          $src = Get-Content -Raw $araCpp
+          if ($src -match 'ARAChannelArrangement\.cpp') {
+            $src -replace 'ARAChannelArrangement\.cpp', 'ARAChannelFormat.cpp' | Set-Content -NoNewline $araCpp
+            Write-Host 'JUCE ARA include patched'
+          }
+
+          function Get-Package([string]$url, [string]$dest) {
+            $tmp = Join-Path $env:RUNNER_TEMP ([IO.Path]::GetRandomFileName() + '.zip')
+            Invoke-WebRequest $url -OutFile $tmp
+            Expand-Archive $tmp -DestinationPath $dest -Force
+          }
+
+          # The ORT CPU archive already contains the onnxruntime-win-x64-1.24.4 folder.
+          Get-Package 'https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-win-x64-1.24.4.zip' $tp
+          Get-Package 'https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime.DirectML/1.24.4' "$tp/onnxruntime-dml-1.24.4"
+          Get-Package 'https://www.nuget.org/api/v2/package/Microsoft.AI.DirectML/1.15.4' "$tp/microsoft.ai.directml.1.15.4"
+          Get-Package 'https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/1.619.5' "$tp/microsoft.direct3d.d3d12.1.619.5"
+
+          # The SoundTouch archive extracts to a differently named folder, so rename it.
+          $stTmp = Join-Path $env:RUNNER_TEMP 'soundtouch'
+          Get-Package 'https://codeberg.org/soundtouch/soundtouch/archive/2.3.3.zip' $stTmp
+          $stRoot = Get-ChildItem $stTmp -Directory | Select-Object -First 1
+          Move-Item $stRoot.FullName "$tp/soundtouch-2.3.3"
+
+          if (-not (Test-Path "$tp/r8brain-free-src-master/CDSPResampler.h")) {
+            git clone --depth 1 https://github.com/avaneev/r8brain-free-src.git "$tp/r8brain-free-src-master"
+          }
+
+          # Models are not built, but CMake copies them into the plugin. Use empty placeholders
+          # and delete the bundle's models folder afterwards so the plugin uses the installed OpenTune models.
+          New-Item -ItemType Directory -Force models, pc_nsf_hifigan_44.1k_ONNX | Out-Null
+          New-Item -ItemType File -Force models/fcpe.onnx | Out-Null
+          New-Item -ItemType File -Force pc_nsf_hifigan_44.1k_ONNX/pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.onnx | Out-Null
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # Fast JUCE-free test: if the spoken note format is broken, skip the long build.
+      - name: Note speech test
+        run: |
+          if (Test-Path Tests/NoteSpeechTests.cpp) {
+            New-Item -ItemType Directory -Force build-tests | Out-Null
+            cl /nologo /std:c++17 /EHsc /utf-8 /ISource Tests/NoteSpeechTests.cpp /Fobuild-tests/ /Febuild-tests/NoteSpeechTests.exe
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            ./build-tests/NoteSpeechTests.exe
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Configure CMake
+        run: |
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) { choco install ninja -y --no-progress }
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build VST3
+        run: cmake --build build --target OpenTune_VST3 --parallel
+
+      - name: Package plugin
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = 'build/OpenTune_artefacts/Release/VST3/OpenTune.vst3'
+          Remove-Item -Recurse -Force "$bundle/Contents/x86_64-win/models"
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item -Recurse $bundle out/
+          Get-ChildItem -Recurse out | ForEach-Object { $_.FullName }
+          "Plugin built: OpenTune.vst3 (JUCE ${{ inputs.juce_ref }})" >> $env:GITHUB_STEP_SUMMARY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenTune-VST3-${{ github.sha }}
+          path: out/
+          retention-days: 7
