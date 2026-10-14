@@ -451,7 +451,9 @@ ParameterPanel::ParameterPanel()
 
     setupLargeKnob(retuneSpeedSlider_, 0.0, 100.0, PitchControlConfig::kDefaultRetuneSpeedPercent, "%");
     retuneSpeedSlider_.getProperties().set("minimalKnob", true);
-    retuneSpeedSlider_.onValueChange = [this] { onRetuneSpeedChanged(); };
+    // Accessibility: key steps (normal, Alt, Page). onCommit waits until the keys stop.
+    retuneSpeedSlider_.setKeySteps(1.0, 0.1, 10.0);
+    retuneSpeedSlider_.onCommit = [this] { onRetuneSpeedChanged(); };
     contentComponent_.addAndMakeVisible(retuneSpeedSlider_);
     retuneSpeedSlider_.setTooltip(LOC(kTooltipRetuneSpeed));
 
@@ -461,7 +463,8 @@ ParameterPanel::ParameterPanel()
 
     setupLargeKnob(vibratoDepthSlider_, 0.0, 100.0, PitchControlConfig::kDefaultVibratoDepth, "%");
     vibratoDepthSlider_.getProperties().set("minimalKnob", true);
-    vibratoDepthSlider_.onValueChange = [this] { onVibratoDepthChanged(); };
+    vibratoDepthSlider_.setKeySteps(1.0, 0.1, 10.0);
+    vibratoDepthSlider_.onCommit = [this] { onVibratoDepthChanged(); };
     contentComponent_.addAndMakeVisible(vibratoDepthSlider_);
     vibratoDepthSlider_.setTooltip(LOC(kTooltipVibratoDepth));
 
@@ -471,7 +474,8 @@ ParameterPanel::ParameterPanel()
 
     setupLargeKnob(vibratoRateSlider_, 3.0, 12.0, PitchControlConfig::kDefaultVibratoRateHz, " Hz");
     vibratoRateSlider_.getProperties().set("minimalKnob", true);
-    vibratoRateSlider_.onValueChange = [this] { onVibratoRateChanged(); };
+    vibratoRateSlider_.setKeySteps(0.1, 0.01, 1.0);
+    vibratoRateSlider_.onCommit = [this] { onVibratoRateChanged(); };
     contentComponent_.addAndMakeVisible(vibratoRateSlider_);
     vibratoRateSlider_.setTooltip(LOC(kTooltipVibratoRate));
 
@@ -488,7 +492,8 @@ ParameterPanel::ParameterPanel()
     // NoteSplit 触发范围重分割（拓扑重建+undo 事务），代价远高于其他参数旋钮：
     // 拖动期间不逐格提交，释放时才通知一次（滚轮/键盘无拖拽语义，逐次提交，频率低可接受）。
     noteSplitSlider_.setChangeNotificationOnlyOnRelease(true);
-    noteSplitSlider_.onValueChange = [this] { onNoteSplitChanged(); };
+    noteSplitSlider_.setKeySteps(5.0, 1.0, 20.0);
+    noteSplitSlider_.onCommit = [this] { onNoteSplitChanged(); };
     contentComponent_.addAndMakeVisible(noteSplitSlider_);
     noteSplitSlider_.setTooltip(LOC(kTooltipNoteSplit));
 

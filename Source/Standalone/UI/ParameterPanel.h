@@ -17,6 +17,7 @@
 #include "UIColors.h"
 #include "ToolIds.h"
 #include "../../Utils/AccessibleComboBox.h"
+#include "../../Utils/AccessibleKnob.h"
 
 namespace OpenTune {
 
@@ -189,14 +190,14 @@ private:
     // Pitch Correction Section
     juce::Label pitchCorrectionHeader_;
     juce::Label retuneSpeedLabel_;
-    juce::Slider retuneSpeedSlider_;
+    a11y::AccessibleKnob retuneSpeedSlider_;
     
     juce::Label vibratoDepthLabel_;
-    juce::Slider vibratoDepthSlider_;
+    a11y::AccessibleKnob vibratoDepthSlider_;
     juce::Label vibratoRateLabel_;
-    juce::Slider vibratoRateSlider_;
+    a11y::AccessibleKnob vibratoRateSlider_;
     juce::Label noteSplitLabel_;
-    juce::Slider noteSplitSlider_;
+    a11y::AccessibleKnob noteSplitSlider_;
 
     // Tools Section
     juce::Label toolsHeader_;
