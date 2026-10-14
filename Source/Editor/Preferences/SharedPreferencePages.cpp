@@ -442,7 +442,7 @@ private:
 class SharedEditingPage final : public juce::Component
 {
 public:
-    static constexpr int kContentHeight = 384; // 20 + 34 + 10 + 34 + 10 + 34 + 10 + 34 + 10 + 34 + 18 + 34 + 10 + 34 + 10 + 28 + 20
+    static constexpr int kContentHeight = 428; // 20 + 34 + 10 + 34 + 10 + 34 + 10 + 34 + 10 + 34 + 18 + 34 + 10 + 34 + 10 + 34 + 10 + 28 + 20
 
     SharedEditingPage(AppPreferences& appPreferences,
                       std::function<void()> onPreferencesChanged,
@@ -572,6 +572,15 @@ public:
         initialiseComboBox(wholeNoteMoveSnapSelector_);
         addAndMakeVisible(wholeNoteMoveSnapSelector_);
         wholeNoteMoveSnapSelector_.setEnabled(state.shared.audioEditingScheme != AudioEditingScheme::Scheme::NotesPrimary);
+
+        initialiseToggleButton(auditionToggle_);
+        auditionToggle_.setButtonText(LOC_RAW("Play the note after a keyboard edit"));
+        auditionToggle_.setToggleState(state.shared.auditionAfterKeyboardEdit, juce::dontSendNotification);
+        auditionToggle_.onClick = [this] {
+            appPreferences_.setAuditionAfterKeyboardEdit(auditionToggle_.getToggleState());
+            notifyChanged();
+        };
+        addAndMakeVisible(auditionToggle_);
     }
 
     void paint(juce::Graphics& g) override
@@ -620,6 +629,9 @@ public:
         wholeNoteMoveSnapSelector_.setBounds(row);
 
         bounds.removeFromTop(10);
+        auditionToggle_.setBounds(bounds.removeFromTop(rowHeight));
+
+        bounds.removeFromTop(10);
         auto resetRow = bounds.removeFromTop(28);
         resetButton_.setBounds(resetRow.removeFromLeft(150));
     }
@@ -657,6 +669,7 @@ private:
     a11y::AccessibleComboBox gridStyleSelector_;
     juce::Label wholeNoteMoveSnapLabel_;
     a11y::AccessibleComboBox wholeNoteMoveSnapSelector_;
+    juce::ToggleButton auditionToggle_;
 };
 
 class SharedVisualPage final : public juce::Component

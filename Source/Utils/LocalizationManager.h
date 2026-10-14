@@ -949,6 +949,7 @@ inline juce::String get(Language lang, const char* key)
         { "Nothing to undo", "Nothing to undo", "没有可撤销的操作", "元に戻す操作はありません", "Нечего отменять", "Nada que deshacer" },
         { "Nothing to redo", "Nothing to redo", "没有可重做的操作", "やり直す操作はありません", "Нечего повторять", "Nada que rehacer" },
         { "Notes removed: {0}", "Notes removed: {0}", "已删除音符：{0}", "削除したノート：{0}", "Удалено нот: {0}", "Notas eliminadas: {0}" },
+        { "Play the note after a keyboard edit", "Play the note after a keyboard edit", "键盘编辑后播放音符", "キーボード編集後にノートを再生", "Проигрывать ноту после правки с клавиатуры", "Reproducir la nota tras editar con el teclado" },
         { "Copied to clipboard", "Copied to clipboard", "已复制到剪贴板", "クリップボードにコピーしました", "Скопировано в буфер обмена", "Copiado al portapapeles" },
         { "Time tool", "Time tool", "时间工具", "タイムツール", "Инструмент времени", "Herramienta de tiempo" },
         { "All notes selected: {0}", "All notes selected: {0}", "已选择全部音符：{0}", "すべてのノートを選択：{0}", "Выделены все ноты: {0}", "Todas las notas seleccionadas: {0}" },

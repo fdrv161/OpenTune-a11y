@@ -5881,6 +5881,9 @@ private:
 
 void PianoRollComponent::scheduleAuditionAfterRender(int noteIndex)
 {
+    // The user can turn this off in Preferences > Editing.
+    if (appPreferences_ != nullptr && !appPreferences_->getAuditionAfterKeyboardEdit())
+        return;
     pendingAuditionNoteIndex_ = noteIndex;
     pendingAuditionTicks_ = 0;
     if (pendingAuditionTimer_ == nullptr)
