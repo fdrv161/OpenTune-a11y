@@ -1640,9 +1640,13 @@ void OpenTuneAudioProcessorEditor::autoTuneRequested()
                 &contentRoot_,
                 LOC(kAutoDialog),
                 result.message());
+        } else {
+            // No dialog by design, but without sight the button seemed to do nothing.
+            a11y::announce(pianoRoll_, LOC_RAW("Already corrected"));
         }
         return;
     }
+    a11y::announce(pianoRoll_, LOC_RAW("AUTO correction applied"));
 
 }
 
