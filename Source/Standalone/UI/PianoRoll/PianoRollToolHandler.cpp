@@ -882,7 +882,7 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
         return false;
 
     if (isSplitKey) {
-        splitSelectedNoteAtPlayhead();
+        splitSelectedNoteByKeyboard();
         return true;
     }
     if (isMergeKey) {
@@ -983,26 +983,11 @@ void PianoRollToolHandler::notifyKeyboardNote(KeyboardNoteEvent event, const std
         ctx_.notifyKeyboardNote(event, notes, index);
 }
 
-std::optional<double> PianoRollToolHandler::playheadSourceTime() const
-{
-    // Same chain as pixelXToSourceTime, starting from the playhead time instead of a pixel.
-    if (!ctx_.getPlayheadTimelineSeconds)
-        return std::nullopt;
-    const auto projection = ctx_.getContentProjection();
-    if (!projection.isValid())
-        return std::nullopt;
-    const auto grid = ctx_.getActiveContentTimeGrid();
-    if (!grid)
-        return std::nullopt;
-
-    const PianoRollTimeMap map(projection, *grid, ctx_.getViewMapper());
-    return map.timelineToSource(ctx_.getPlayheadTimelineSeconds());
-}
-
-// X: split a note at the host cursor. Same as the scissors tool with the mouse
-// (handleScissorsToolUp) but cuts a single note: the selected one if the cursor is on it,
-// otherwise the note under the cursor, so it need not be found with the arrows first.
-void PianoRollToolHandler::splitSelectedNoteAtPlayhead()
+// X: split the selected note where its sung pitch changes the most - usually where two sung
+// notes were merged into one. Without a clear pitch change the note is split in half.
+// The host cursor is not used: with the transport stopped the plugin does not learn where
+// the user moved it. The split itself mirrors the scissors tool (handleScissorsToolUp).
+void PianoRollToolHandler::splitSelectedNoteByKeyboard()
 {
     const auto beforeNotes = committedNotes(ctx_);
     if (beforeNotes.empty()) {
@@ -1010,52 +995,87 @@ void PianoRollToolHandler::splitSelectedNoteAtPlayhead()
         return;
     }
     const auto selected = collectSelectedNoteIndices(beforeNotes);
-    const auto splitTime = playheadSourceTime();
-
-    // Do not create parts shorter than 20 ms: a cursor at the very edge is almost certainly a miss.
-    static constexpr double kMinPartSeconds = 0.02;
-    const auto cursorInside = [&splitTime](const Note& note) {
-        return splitTime.has_value()
-            && *splitTime > note.startTime + kMinPartSeconds
-            && *splitTime < note.endTime - kMinPartSeconds;
-    };
-
-    int index = -1;
-    if (!selected.empty() && cursorInside(beforeNotes[static_cast<size_t>(selected.front())])) {
-        index = selected.front();
-    } else {
-        for (int i = 0; i < static_cast<int>(beforeNotes.size()); ++i) {
-            if (cursorInside(beforeNotes[static_cast<size_t>(i)])) {
-                index = i;
-                break;
-            }
-        }
-    }
-    if (index < 0) {
-        // index is the selected note (if any) so the message can name its time for comparison.
-        notifyKeyboardNote(KeyboardNoteEvent::CursorOutsideNote, beforeNotes,
-                           selected.empty() ? -1 : selected.front());
+    if (selected.empty()) {
+        notifyKeyboardNote(KeyboardNoteEvent::NoSelection, beforeNotes, -1);
         return;
     }
+
+    const int index = selected.front();
     const Note& original = beforeNotes[static_cast<size_t>(index)];
+
+    // Parts shorter than 20 ms are useless.
+    static constexpr double kMinPartSeconds = 0.02;
+    if (original.getDuration() < 2.0 * kMinPartSeconds) {
+        notifyKeyboardNote(KeyboardNoteEvent::NoteTooShort, beforeNotes, index);
+        return;
+    }
+
+    double splitTime = 0.5 * (original.startTime + original.endTime);
+    bool foundPitchChange = false;
+    const auto f0tl = ctx_.getF0Timeline();
+    const auto originalF0 = ctx_.getOriginalF0 ? ctx_.getOriginalF0() : std::vector<float>{};
+    if (!originalF0.empty() && !f0tl.isEmpty()) {
+        const auto range = f0tl.rangeForTimes(original.startTime, original.endTime);
+        const int frameCount = static_cast<int>(originalF0.size());
+        // Mean sung pitch (MIDI) of the voiced frames in [from, to) inside the note.
+        const auto meanMidi = [&](int from, int to) -> std::optional<float> {
+            float sum = 0.0f;
+            int count = 0;
+            for (int frame = std::max(from, range.startFrame);
+                 frame < std::min({ to, range.endFrameExclusive, frameCount }); ++frame) {
+                const float hz = originalF0[static_cast<size_t>(frame)];
+                if (hz > 0.0f) {
+                    sum += PitchUtils::freqToMidi(hz);
+                    ++count;
+                }
+            }
+            if (count < 2)
+                return std::nullopt;
+            return sum / static_cast<float>(count);
+        };
+
+        // Compare the mean pitch just before and just after each frame (~45 ms each side
+        // at the usual hop) and pick the frame with the largest jump.
+        constexpr int kWindowFrames = 4;
+        float bestJump = 0.0f;
+        int bestFrame = -1;
+        for (int frame = range.startFrame + 1; frame < range.endFrameExclusive; ++frame) {
+            const double time = f0tl.timeAtFrame(frame);
+            if (time <= original.startTime + kMinPartSeconds || time >= original.endTime - kMinPartSeconds)
+                continue;
+            const auto before = meanMidi(frame - kWindowFrames, frame);
+            const auto after = meanMidi(frame, frame + kWindowFrames);
+            if (!before || !after)
+                continue;
+            const float jump = std::abs(*after - *before);
+            if (jump > bestJump) {
+                bestJump = jump;
+                bestFrame = frame;
+            }
+        }
+        // Less than half a semitone is vibrato or drift, not a second note.
+        if (bestFrame >= 0 && bestJump >= 0.5f) {
+            splitTime = f0tl.timeAtFrame(bestFrame);
+            foundPitchChange = true;
+        }
+    }
 
     Note left = original;
     Note right = original;
-    left.endTime = *splitTime;
+    left.endTime = splitTime;
     left.dirty = true;
-    right.startTime = *splitTime;
+    right.startTime = splitTime;
     right.dirty = true;
 
     // As with the scissors: each part's pitch centre is the mean of the effective (corrected) F0.
     const auto effectiveF0 = loadEffectiveF0();
     if (!effectiveF0.empty()) {
-        const auto f0tl = ctx_.getF0Timeline();
-        const float leftAvgF0 = computeAvgF0InRange(f0tl, effectiveF0, original.startTime, *splitTime);
+        const float leftAvgF0 = computeAvgF0InRange(f0tl, effectiveF0, original.startTime, splitTime);
         if (leftAvgF0 > 0.0f) {
             left.pitch = leftAvgF0;
             left.pitchOffset = 0.0f;
         }
-        const float rightAvgF0 = computeAvgF0InRange(f0tl, effectiveF0, *splitTime, original.endTime);
+        const float rightAvgF0 = computeAvgF0InRange(f0tl, effectiveF0, splitTime, original.endTime);
         if (rightAvgF0 > 0.0f) {
             right.pitch = rightAvgF0;
             right.pitchOffset = 0.0f;
@@ -1088,7 +1108,8 @@ void PianoRollToolHandler::splitSelectedNoteAtPlayhead()
             LOC_RAW("Split note"), beforeNotes, newNotes,
             ctx_.replaceContentNotesForFullMutation, ctx_.republishPlaybackSource));
     }
-    notifyKeyboardNote(KeyboardNoteEvent::Split, newNotes, index);
+    notifyKeyboardNote(foundPitchChange ? KeyboardNoteEvent::Split : KeyboardNoteEvent::SplitInHalf,
+                       newNotes, index);
 }
 
 // J: merge the selected note with the next one if they touch. Same as double-clicking

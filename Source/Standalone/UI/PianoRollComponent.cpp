@@ -220,8 +220,6 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
                                         const std::vector<Note>& notes, int index) {
         handleKeyboardNote(event, notes, index);
     };
-    // Same time as the drawn playhead (including a seek the host has not accepted yet).
-    toolCtx.getPlayheadTimelineSeconds = [this]() { return playheadTimeForPaint_; };
     toolCtx.notifyToolChangedFromKeyboard = [this](ToolId tool) {
         const auto name = keyboardToolName(tool);
         if (name.isNotEmpty())
@@ -5766,27 +5764,22 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             a11y::announce(*this, describeKeyboardNote(notes, index, NoteDetail::Full));
             return;
         case Event::Split:
-            a11y::announce(*this, LOC_RAW("Note split") + ", "
-                                      + describeKeyboardNote(notes, index, NoteDetail::Navigation));
+        case Event::SplitInHalf: {
+            // Name both parts so it is clear whether the cut separated two different notes.
+            const auto parts = describeKeyboardNote(notes, index, NoteDetail::Target) + ", "
+                             + describeKeyboardNote(notes, index + 1, NoteDetail::Target);
+            a11y::announce(*this, Loc::format(event == Event::Split ? LOC_RAW("Note split: {0}")
+                                                                    : LOC_RAW("No clear pitch change, split in half: {0}"),
+                                              parts));
+            return;
+        }
+        case Event::NoteTooShort:
+            a11y::announce(*this, LOC_RAW("Note too short to split"));
             return;
         case Event::Merged:
             a11y::announce(*this, LOC_RAW("Notes merged") + ", "
                                       + describeKeyboardNote(notes, index, NoteDetail::Navigation));
             return;
-        case Event::CursorOutsideNote: {
-            // Speak the cursor time as the plugin sees it (project time, as in the host)
-            // and the selected note's time, so it is clear where to move the cursor.
-            juce::String line = Loc::format(LOC_RAW("Cursor at {0} s is not on a note"),
-                                            juce::String(playheadTimeForPaint_, 2));
-            if (index >= 0 && index < static_cast<int>(notes.size())) {
-                const auto& note = notes[static_cast<size_t>(index)];
-                line << ". " << Loc::format(LOC_RAW("Selected note: {0} to {1} s"),
-                                            juce::String(sourceTimeToTimelineTime(note.startTime), 2),
-                                            juce::String(sourceTimeToTimelineTime(note.endTime), 2));
-            }
-            a11y::announce(*this, line);
-            return;
-        }
         case Event::NoAdjacentNote:
             a11y::announce(*this, LOC_RAW("No adjacent next note"));
             return;

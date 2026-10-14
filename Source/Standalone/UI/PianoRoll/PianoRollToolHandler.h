@@ -96,9 +96,10 @@ public:
         Info,        // full details requested (I key)
         NoNotes,     // there are no notes at all
         NoSelection, // notes exist but none is selected
-        Split,              // X: note split, index is the left part
+        Split,              // X: split at the largest pitch change, index is the left part
         Merged,             // J: note merged with the next one, index is the result
-        CursorOutsideNote,  // X: host cursor is not on a note; index is the selected note or -1
+        SplitInHalf,        // X: no clear pitch change, split in the middle
+        NoteTooShort,       // X: note shorter than two minimal parts
         NoAdjacentNote,     // J: no touching next note
         AllSelected,        // Ctrl+A: all notes selected
         ModulationChanged,  // arrows or Enter with the Pitch Modulation tool
@@ -199,8 +200,6 @@ public:
         std::function<void(size_t, float, float)> notifyNoteOffsetChanged;
         // notes is the current list (after a move it already holds the new pitch), index is a note or -1.
         std::function<void(KeyboardNoteEvent, const std::vector<Note>&, int)> notifyKeyboardNote;
-        // Playhead position on the project timeline (seconds), used for splitting notes from the keyboard.
-        std::function<double()> getPlayheadTimelineSeconds;
         // Tool switched by a key: the screen reader announces the new tool.
         std::function<void(ToolId)> notifyToolChangedFromKeyboard;
 
@@ -332,8 +331,7 @@ private:
     void moveSelectedNotesPitchByKeyboard(int direction, bool fineCents = false);
     void selectNoteFromKeyboard(const std::vector<Note>& notes, int index);
     void notifyKeyboardNote(KeyboardNoteEvent event, const std::vector<Note>& notes, int index);
-    std::optional<double> playheadSourceTime() const;
-    void splitSelectedNoteAtPlayhead();
+    void splitSelectedNoteByKeyboard();
     void mergeSelectedNoteWithNext();
     void adjustSelectedNotesModDriftByKeyboard(int direction, bool fine);
     bool applyNoteDefaultActionByKeyboard();
