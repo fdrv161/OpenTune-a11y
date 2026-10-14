@@ -417,6 +417,8 @@ private:
 
     // Scissors 自定义双击检测：记录上一次点击的时间戳和位置
     // 在 handleScissorsToolUp 中检测：800ms / 30px 内的同位置点击触发合并。
+    // Accessibility: the edit cursor (source seconds) at the last Left/Right press.
+    std::optional<double> lastArrowCursor_;
     std::chrono::steady_clock::time_point scissorsLastClickTime_{};
     juce::Point<int> scissorsLastClickPos_{};
     static constexpr int kScissorsDoubleClickMs = 800;  // 800ms 双击阈值
