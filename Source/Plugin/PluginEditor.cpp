@@ -204,8 +204,27 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
                            [safeEditor, safeButton, menuIndex](int result) {
                                if (safeEditor == nullptr)
                                    return;
-                               if (safeButton != nullptr && safeButton->isShowing())
+                               // The menu lives inside contentRoot_ and is deleted after this
+                               // callback, taking focus with it, so a focus grab here was lost
+                               // (user test: silence after Esc). Do it a moment later.
+                               juce::Timer::callAfterDelay(100, [safeEditor, safeButton, cancelled = result == 0] {
+                                   if (safeEditor == nullptr || safeButton == nullptr || !safeButton->isShowing())
+                                       return;
+                                   auto* focused = juce::Component::getCurrentlyFocusedComponent();
+                                   if (focused == safeButton.getComponent()) {
+                                       // Focus never left the button: there is no focus event, so name it.
+                                       if (cancelled)
+                                           a11y::announce(*safeButton, safeButton->getTitle().isNotEmpty()
+                                                                           ? safeButton->getTitle()
+                                                                           : safeButton->getName());
+                                       return;
+                                   }
+                                   // A dialog opened from the menu has focus now: leave it there.
+                                   if (focused != nullptr && focused != safeEditor.getComponent()
+                                       && focused != &safeEditor->contentRoot_)
+                                       return;
                                    safeButton->grabKeyboardFocus();
+                               });
                                if (result != 0)
                                    safeEditor->menuBar_.menuItemSelected(result, menuIndex);
                            });
