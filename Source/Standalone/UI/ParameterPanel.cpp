@@ -615,25 +615,25 @@ ParameterPanel::ParameterPanel()
     pitchGridSelector_.setScrollWheelEnabled(true);
     contentComponent_.addChildComponent(pitchGridSelector_);
 
-    // Доступность: прокручиваемая область сама по себе принимала фокус по Tab и звучала
-    // в NVDA как «unknown». Элементы внутри неё остаются доступны по Tab.
+    // Accessibility: the viewport itself took Tab focus and NVDA read it
+    // as "unknown". Controls inside it remain reachable with Tab.
     viewport_.setWantsKeyboardFocus(false);
-    // Полосы прокрутки работают только мышью, а NVDA читал их как «scroll bar 0».
+    // Scroll bars are mouse-only and NVDA read them as "scroll bar 0".
     viewport_.getVerticalScrollBar().setAccessible(false);
     viewport_.getHorizontalScrollBar().setAccessible(false);
-    // Надписи над ручками и заголовки разделов: JUCE отдаёт текст надписи и как имя, и как
-    // значение, поэтому NVDA читал их дважды. Имена ручек теперь у самих ручек.
+    // Knob captions and section headers: JUCE exposes a label's text both as name and as
+    // value, so NVDA read them twice. The knobs now carry the names themselves.
     for (auto* caption : { &pitchCorrectionHeader_, &retuneSpeedLabel_, &vibratoDepthLabel_,
                            &vibratoRateLabel_, &noteSplitLabel_, &toolsHeader_ })
         caption->setAccessible(false);
     applyAccessibilityTitles();
 }
 
-// Имена для скринридера: подписи над ручками — отдельные Label, поэтому сами поля значений
-// и кнопки инструментов (у них внутренние имена вроде PitchModulation) звучали без названия.
+// Screen reader names: knob captions are separate Labels, so the value boxes
+// and tool buttons (internal names like PitchModulation) were read without a proper name.
 void ParameterPanel::applyAccessibilityTitles()
 {
-    // Имя ручки берёт и поле ввода значения (см. LargeKnobLookAndFeel::createSliderTextBox).
+    // The value editor picks up the knob name too (see LargeKnobLookAndFeel::createSliderTextBox).
     retuneSpeedSlider_.setTitle(LOC(kRetuneSpeed));
     vibratoDepthSlider_.setTitle(LOC(kVibratoDepth));
     vibratoRateSlider_.setTitle(LOC(kVibratoRate));

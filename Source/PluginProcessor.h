@@ -884,8 +884,8 @@ public:
     UndoManager& getUndoManager() { return undoManager_; }
     PianoKeyAudition& getPianoKeyAudition() { return pianoKeyAudition_; }
     NoteAudition& getNoteAudition() { return noteAudition_; }
-    // Уже рассчитанный (исправленный) звук контента. В ARA он хранится у DocumentController,
-    // а не у этого экземпляра плагина, поэтому ищем через общий выбор сервиса.
+    // Rendered (corrected) audio of a content. In ARA it is owned by the DocumentController,
+    // not by this plugin instance, so resolve it through the shared service lookup.
     std::shared_ptr<const RenderCache> getReadableRenderCache(ContentKey key) const
     {
         const auto* renderService = resolveReadableContentRenderService(key);

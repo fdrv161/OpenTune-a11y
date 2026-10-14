@@ -1529,7 +1529,7 @@ if(OPENTUNE_BUILD_TESTS)
     endif()
     add_test(NAME PitchLaneVisualPolicyTests COMMAND OpenTunePitchLaneVisualPolicyTests)
 
-    # Текст о высоте ноты для скринридера — только стандартная библиотека
+    # Spoken note pitch text for screen readers - standard library only
     add_executable(OpenTuneNoteSpeechTests
         Tests/NoteSpeechTests.cpp
     )

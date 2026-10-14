@@ -21,8 +21,8 @@ public:
     explicit ScrollablePage(std::unique_ptr<juce::Component> content, int contentHeight)
     {
         setScrollBarThickness(8);
-        // Доступность: сама прокручиваемая область брала фокус по Tab (NVDA: «unknown»),
-        // а полосы прокрутки работают только мышью. Элементы страницы остаются доступны.
+        // Accessibility: the viewport itself took Tab focus (NVDA: "unknown")
+        // and the scroll bars are mouse-only. Page controls stay reachable.
         setWantsKeyboardFocus(false);
         getVerticalScrollBar().setAccessible(false);
         getHorizontalScrollBar().setAccessible(false);
@@ -78,7 +78,7 @@ public:
             tabbedComponent_.addTab(page.title, UIColors::backgroundDark, scrollable, true);
         }
 
-        // Доступность: кнопки вкладок по умолчанию не берут фокус, и Tab их пропускал.
+        // Accessibility: tab buttons do not take focus by default, so Tab skipped them.
         auto& tabBar = tabbedComponent_.getTabbedButtonBar();
         for (int i = 0; i < tabBar.getNumTabs(); ++i)
             if (auto* tabButton = tabBar.getTabButton(i))
@@ -124,8 +124,8 @@ public:
                 dialogWindow->setContentComponentSize(contentWidth, contentHeight);
             }
 
-            // Доступность: при открытии фокус был на самом окне, а не на элементе.
-            // Ставим его на выбранную вкладку, когда окно уже на экране.
+            // Accessibility: on open, focus sat on the bare window rather than a control.
+            // Move it to the selected tab once the window is on screen.
             juce::Component::SafePointer<TabbedPreferencesDialog> safeThis(this);
             juce::Timer::callAfterDelay(100, [safeThis] {
                 if (safeThis == nullptr)
@@ -138,7 +138,7 @@ public:
         }
     }
 
-    // Ctrl+Tab / Ctrl+Shift+Tab — следующая и предыдущая вкладка, как в окнах Windows.
+    // Ctrl+Tab / Ctrl+Shift+Tab switch to the next / previous tab, as in Windows dialogs.
     bool keyPressed(const juce::KeyPress& key) override
     {
         const auto mods = key.getModifiers();
@@ -154,7 +154,7 @@ public:
     }
 
 private:
-    // Кнопки вкладок: сообщаем имя открытой вкладки, иначе после Enter на кнопке тишина.
+    // Announce the opened tab's name; otherwise pressing Enter on a tab button is silent.
     class AnnouncingTabs final : public juce::TabbedComponent
     {
     public:
@@ -168,10 +168,10 @@ private:
         }
     };
 
-    // Страницы настроек устроены как «подпись, затем элемент». JUCE отдаёт скринридеру текст
-    // подписи дважды (как имя и как значение), а у списков и ползунков имени нет вовсе.
-    // Переносим текст подписи в имя элемента и скрываем саму подпись. У кнопок с собственным
-    // текстом (сочетание клавиш, цвет) текст меняется, поэтому подпись идёт в описание.
+    // Preference pages are laid out as "caption label, then control". JUCE exposes a label's
+    // text twice (as name and value), while combo boxes and sliders get no name at all.
+    // Move the caption into the control's title and hide the caption. Buttons with their own
+    // changing text (shortcut binding, colour) get the caption as description instead.
     static void nameControlsByPrecedingLabels(juce::Component& page)
     {
         juce::Label* pendingLabel = nullptr;

@@ -1,14 +1,14 @@
 #pragma once
 
-// Текст о высоте ноты для скринридера: «A4 +25 ct», «C sharp 4».
-// Только стандартная библиотека, чтобы формат можно было проверить тестом без JUCE.
+// Spoken note pitch text for screen readers: "A4 +25 ct", "C sharp 4".
+// Standard library only, so the format can be tested without JUCE.
 
 #include <cmath>
 #include <string>
 
 namespace OpenTune::NoteSpeech {
 
-// Ближайшая нота и отклонение от неё в центах (от -50 до +49).
+// Nearest note and the deviation from it in cents (-50 to +49).
 struct PitchParts
 {
     int midi = 0;
@@ -17,21 +17,21 @@ struct PitchParts
 
 inline PitchParts splitMidi(float midi)
 {
-    // Сначала округляем до цента, потом делим: иначе 68.996 дало бы «A4 -0 ct».
+    // Round to whole cents first, then split; otherwise 68.996 would give "A4 -0 ct".
     const long totalCents = std::lround(static_cast<double>(midi) * 100.0);
     const long nearest = (totalCents + 50) / 100;
     return { static_cast<int>(nearest), static_cast<int>(totalCents - nearest * 100) };
 }
 
-// «A4» или «C sharp 4». Символ # не используем: синтезаторы речи читают его по-разному
-// («решётка», «номер»), поэтому диез передаётся словом sharpWord.
+// "A4" or "C sharp 4". The # sign is avoided: speech synthesizers read it differently
+// ("hash", "number"), so the sharp is passed as the word sharpWord.
 inline std::string noteName(int midi, const std::string& sharpWord)
 {
     static const char* const letters[12] = { "C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B" };
     static const bool sharp[12] = { false, true, false, true, false, false, true, false, true, false, true, false };
 
     const int pitchClass = ((midi % 12) + 12) % 12;
-    // Целочисленное деление «вниз» для отрицательных номеров, чтобы октава не сбивалась.
+    // Floor division for negative note numbers so the octave stays correct.
     const int octave = (midi >= 0 ? midi / 12 : (midi - 11) / 12) - 1;
 
     std::string text = letters[pitchClass];
@@ -41,7 +41,7 @@ inline std::string noteName(int midi, const std::string& sharpWord)
     return text;
 }
 
-// «A4 +25 ct»; при нулевом отклонении — просто «A4».
+// "A4 +25 ct"; with zero deviation just "A4".
 inline std::string describeMidi(float midi, const std::string& sharpWord)
 {
     const auto parts = splitMidi(midi);

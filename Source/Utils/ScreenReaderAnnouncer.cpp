@@ -17,8 +17,8 @@ namespace OpenTune::a11y {
 #if JUCE_WINDOWS
 namespace {
 
-// Значения из UIAutomationCore.h (Windows 10 1709+). Объявлены здесь, чтобы не зависеть
-// от версии Windows SDK и _WIN32_WINNT.
+// Values from UIAutomationCore.h (Windows 10 1709+). Declared here so the code does not
+// depend on the Windows SDK version or _WIN32_WINNT.
 constexpr int kNotificationKindOther = 4;              // NotificationKind_Other
 constexpr int kProcessingImportantAll = 0;             // NotificationProcessing_ImportantAll
 constexpr int kProcessingImportantMostRecent = 1;      // NotificationProcessing_ImportantMostRecent
@@ -30,8 +30,8 @@ struct UiaFunctions
 {
     UiaFunctions()
     {
-        // Загружаем во время работы, а не линкуем: на старой Windows плагин должен
-        // просто молчать, а не отказываться загружаться в DAW.
+        // Load at run time instead of linking: on old Windows the plugin should
+        // just stay silent rather than fail to load in the host.
         if (auto* module = ::LoadLibraryW(L"UIAutomationCore.dll")) {
             raise = reinterpret_cast<RaiseNotificationFn>(::GetProcAddress(module, "UiaRaiseNotificationEvent"));
             listening = reinterpret_cast<ClientsListeningFn>(::GetProcAddress(module, "UiaClientsAreListening"));
@@ -59,20 +59,20 @@ void announce(juce::Component& source, const juce::String& text, SpeechQueue que
         return;
 
 #if JUCE_WINDOWS
-    // Не используем juce::AccessibilityHandler::postAnnouncement: на Windows JUCE говорит
-    // его голосом SAPI мимо скринридера, а NVDA и JAWS сообщение не получают.
+    // Do not use juce::AccessibilityHandler::postAnnouncement: on Windows JUCE speaks it
+    // with a SAPI voice that bypasses the screen reader, and NVDA / JAWS never get it.
     const auto& functions = uia();
     if (functions.raise == nullptr)
         return;
     if (functions.listening != nullptr && !functions.listening())
-        return; // скринридер не запущен
+        return; // no screen reader running
 
-    // nullptr, если компонент исключён из дерева доступности или ещё не на экране.
+    // nullptr if the component is excluded from the accessibility tree or not on screen yet.
     auto* handler = source.getAccessibilityHandler();
     if (handler == nullptr)
         return;
 
-    // На Windows нативная реализация JUCE — COM-объект провайдера UI Automation.
+    // On Windows JUCE's native implementation is a UI Automation provider COM object.
     auto* unknown = reinterpret_cast<IUnknown*>(handler->getNativeImplementation());
     if (unknown == nullptr)
         return;
@@ -98,7 +98,7 @@ void announce(juce::Component& source, const juce::String& text, SpeechQueue que
     provider->Release();
 #else
     juce::ignoreUnused(source);
-    // На macOS JUCE передаёт это VoiceOver штатным уведомлением.
+    // On macOS JUCE forwards this to VoiceOver as a regular announcement.
     juce::AccessibilityHandler::postAnnouncement(text,
         queue == SpeechQueue::replacePrevious ? juce::AccessibilityHandler::AnnouncementPriority::high
                                               : juce::AccessibilityHandler::AnnouncementPriority::medium);

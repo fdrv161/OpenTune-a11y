@@ -38,8 +38,8 @@ public:
     {
         auto* label = OpenTuneLookAndFeel::createSliderTextBox(slider);
         label->setFont(UIColors::getLabelFont(14.0f));
-        // По Tab фокус получает поле ввода, которое Label открывает, а у него нет имени
-        // (NVDA: «edit selected 15.00%»). Даём полю имя ручки в момент открытия.
+        // Tab focuses the TextEditor that the Label opens, and it has no name
+        // (NVDA: "edit selected 15.00%"). Give it the knob name when it opens.
         juce::Component::SafePointer<juce::Slider> safeSlider(&slider);
         label->onEditorShow = [label, safeSlider] {
             if (auto* editor = label->getCurrentTextEditor())

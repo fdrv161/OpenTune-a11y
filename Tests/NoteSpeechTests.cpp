@@ -1,4 +1,4 @@
-// Проверка текста о высоте ноты для скринридера (Utils/NoteSpeech.h). Только стандартная библиотека.
+// Tests for the spoken note pitch text (Utils/NoteSpeech.h). Standard library only.
 #include "Utils/NoteSpeech.h"
 
 #include <cstdio>
@@ -23,10 +23,10 @@ int main()
     expectText(69.0f, "A4");
     expectText(69.25f, "A4 +25 ct");
     expectText(68.75f, "A4 -25 ct");
-    expectText(68.996f, "A4");          // округление до цента не должно давать «-0 ct»
+    expectText(68.996f, "A4");          // rounding to cents must not give "-0 ct"
     expectText(60.0f, "C4");
     expectText(61.0f, "C sharp 4");
-    expectText(71.5f, "C5 -50 ct");     // ровно посередине — к верхней ноте
+    expectText(71.5f, "C5 -50 ct");     // exactly halfway rounds up to the higher note
     expectText(71.49f, "B4 +49 ct");
     expectText(59.0f, "B3");
     expectText(21.0f, "A0");

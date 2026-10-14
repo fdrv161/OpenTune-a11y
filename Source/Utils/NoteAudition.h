@@ -7,19 +7,19 @@
 namespace OpenTune {
 
 /**
- * Прослушивание спетой ноты: при переходе стрелками по нотам играет кусок исходного
- * вокала этой ноты, как в Melodyne. Транспорт DAW при этом не трогается — звук
- * подмешивается в выход плагина так же, как пробник клавиш фортепиано.
+ * Note audition: when moving between notes with the arrows, plays that note's vocal
+ * fragment, as in Melodyne. The host transport is not touched: the audio is
+ * mixed into the plugin output just like the piano key audition.
  *
- * play/stop вызываются из потока сообщений, mixIntoBuffer — из аудиопотока.
- * Аудиопоток не выделяет и не освобождает память: старый кусок он откладывает
- * в retired_, а освобождает его поток сообщений при следующем вызове.
+ * play/stop are called on the message thread, mixIntoBuffer on the audio thread.
+ * The audio thread never allocates or frees memory: it parks the old clip
+ * in retired_, and the message thread frees it on its next call.
  */
 class NoteAudition {
 public:
     NoteAudition() = default;
 
-    /// Сыграть кусок source с startSample длиной numSamples (заменяет то, что звучит сейчас).
+    /// Play numSamples of source from startSample (replaces whatever is playing).
     void play(const juce::AudioBuffer<float>& source, double sourceSampleRate,
               int startSample, int numSamples);
     void stop();
@@ -37,11 +37,11 @@ private:
     void takePendingClip();
 
     juce::SpinLock lock_;
-    std::unique_ptr<Clip> pending_;   // под lock_
-    std::unique_ptr<Clip> retired_;   // под lock_
-    bool stopRequested_ = false;      // под lock_
+    std::unique_ptr<Clip> pending_;   // guarded by lock_
+    std::unique_ptr<Clip> retired_;   // guarded by lock_
+    bool stopRequested_ = false;      // guarded by lock_
 
-    // Только аудиопоток.
+    // Audio thread only.
     std::unique_ptr<Clip> playing_;
     double position_ = 0.0;
 

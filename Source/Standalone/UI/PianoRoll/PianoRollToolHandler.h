@@ -88,21 +88,21 @@ public:
         PitchCorrectionSegment::ParameterSnapshot parameterSnapshot;
     };
 
-    // Что произошло с нотой при работе с клавиатуры — для озвучки и прослушивания.
+    // What happened to a note during keyboard editing - drives speech and audition.
     enum class KeyboardNoteEvent
     {
-        Selected,    // перешли на ноту стрелкой, Home или End
-        PitchMoved,  // сдвинули высоту стрелкой вверх/вниз
-        Info,        // запросили полную информацию (клавиша I)
-        NoNotes,     // нот нет совсем
-        NoSelection, // ноты есть, но ни одна не выбрана
-        Split,              // X: нота разрезана, index — левая часть
-        Merged,             // J: нота склеена со следующей, index — результат
-        CursorOutsideNote,  // X: курсор REAPER не на ноте; index — выбранная нота или -1
-        NoAdjacentNote,     // J: следующей ноты вплотную нет
-        AllSelected,        // Ctrl+A: выбраны все ноты
-        ModulationChanged,  // стрелки или Enter с инструментом «модуляция тона»
-        DriftChanged        // стрелки или Enter с инструментом «дрейф тона»
+        Selected,    // moved to a note with an arrow, Home or End
+        PitchMoved,  // pitch moved with Up/Down
+        Info,        // full details requested (I key)
+        NoNotes,     // there are no notes at all
+        NoSelection, // notes exist but none is selected
+        Split,              // X: note split, index is the left part
+        Merged,             // J: note merged with the next one, index is the result
+        CursorOutsideNote,  // X: host cursor is not on a note; index is the selected note or -1
+        NoAdjacentNote,     // J: no touching next note
+        AllSelected,        // Ctrl+A: all notes selected
+        ModulationChanged,  // arrows or Enter with the Pitch Modulation tool
+        DriftChanged        // arrows or Enter with the Pitch Drift tool
     };
 
     // PianoRoll 组件提供的回调上下文。
@@ -197,11 +197,11 @@ public:
         std::function<void()> notifyStopPlayback;
         std::function<void()> notifyEscapeKey;
         std::function<void(size_t, float, float)> notifyNoteOffsetChanged;
-        // notes — актуальный список (после сдвига — уже с новой высотой), index — нота или -1.
+        // notes is the current list (after a move it already holds the new pitch), index is a note or -1.
         std::function<void(KeyboardNoteEvent, const std::vector<Note>&, int)> notifyKeyboardNote;
-        // Положение курсора воспроизведения на шкале проекта (секунды) — для резки нот с клавиатуры.
+        // Playhead position on the project timeline (seconds), used for splitting notes from the keyboard.
         std::function<double()> getPlayheadTimelineSeconds;
-        // Инструмент сменён клавишей: скринридер называет новый инструмент.
+        // Tool switched by a key: the screen reader announces the new tool.
         std::function<void(ToolId)> notifyToolChangedFromKeyboard;
 
         // === EQ Tool ===

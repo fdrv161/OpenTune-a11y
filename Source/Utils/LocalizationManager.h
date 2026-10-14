@@ -931,7 +931,7 @@ inline juce::String get(Language lang, const char* key)
         { Keys::kEraser, "Eraser", "橡皮擦", "消しゴム", "Ластик", "Borrador" },
         { "Resize note", "Resize note", "调整音符长度", "ノートの長さを調整", "Изменить длину ноты", "Cambiar duración de nota" },
         { "Move note", "Move note", "移动音符", "ノートを移動", "Переместить ноту", "Mover nota" },
-        // Озвучка редактора нот для скринридера
+        // Piano roll screen reader speech
         { "Notes", "Notes", "音符", "ノート", "Ноты", "Notas" },
         { "No notes", "No notes", "没有音符", "ノートがありません", "Нет нот", "No hay notas" },
         { "No note selected", "No note selected", "未选择音符", "ノートが選択されていません", "Нота не выбрана", "No hay ninguna nota seleccionada" },

@@ -16,7 +16,7 @@ void NoteAudition::play(const juce::AudioBuffer<float>& source, double sourceSam
     if (numSamples <= 0)
         return;
 
-    // Готовим кусок заранее: моно и с плавными краями (5 мс), чтобы не было щелчков.
+    // Prepare the clip up front: mono with 5 ms fades to avoid clicks.
     auto clip = std::make_unique<Clip>();
     clip->sampleRate = sourceSampleRate;
     clip->mono.setSize(1, numSamples);
@@ -39,7 +39,7 @@ void NoteAudition::play(const juce::AudioBuffer<float>& source, double sourceSam
         pending_ = std::move(clip);
         stopRequested_ = false;
     }
-    // toFree1/toFree2 освобождаются здесь, в потоке сообщений.
+    // toFree1/toFree2 are released here, on the message thread.
 }
 
 void NoteAudition::stop()
@@ -55,7 +55,7 @@ void NoteAudition::stop()
 
 void NoteAudition::takePendingClip()
 {
-    // Не ждём блокировку: если поток сообщений сейчас её держит, заберём кусок в следующем блоке.
+    // Never wait for the lock: if the message thread holds it, pick the clip up next block.
     const juce::SpinLock::ScopedTryLockType tryLock(lock_);
     if (!tryLock.isLocked())
         return;
@@ -63,8 +63,8 @@ void NoteAudition::takePendingClip()
     if (pending_ == nullptr && !stopRequested_)
         return;
 
-    // Старый кусок можно отложить, только если место для отложенного свободно.
-    // Иначе подождём, пока поток сообщений его освободит (тогда кусок доиграет ещё блок).
+    // The old clip can be retired only if the retired slot is free.
+    // Otherwise wait until the message thread frees it (the clip plays one more block).
     if (playing_ != nullptr && retired_ != nullptr)
         return;
 
@@ -90,7 +90,7 @@ void NoteAudition::mixIntoBuffer(juce::AudioBuffer<float>& output, int numSample
     const auto& clip = *playing_;
     const int clipLength = clip.mono.getNumSamples();
     if (position_ >= static_cast<double>(clipLength - 1))
-        return; // доиграли — остаёмся тихими до следующей ноты
+        return; // finished - stay silent until the next note
 
     const float* src = clip.mono.getReadPointer(0);
     const double step = clip.sampleRate / outputSampleRate;
@@ -101,7 +101,7 @@ void NoteAudition::mixIntoBuffer(juce::AudioBuffer<float>& output, int numSample
         const int index = static_cast<int>(position_);
         if (index >= clipLength - 1)
             break;
-        // Линейная интерполяция: для прослушивания достаточно, если частоты не совпадают.
+        // Linear interpolation is good enough for audition when the sample rates differ.
         const float frac = static_cast<float>(position_ - static_cast<double>(index));
         const float sample = src[index] + (src[index + 1] - src[index]) * frac;
         for (int ch = 0; ch < outChannels; ++ch)

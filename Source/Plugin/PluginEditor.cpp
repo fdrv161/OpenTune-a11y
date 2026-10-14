@@ -287,9 +287,9 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
 
     grabKeyboardFocus();
 
-    // Доступность: сразу ставим фокус в окно нот, чтобы стрелки работали без Tab.
-    // С задержкой — в конструкторе редактор ещё не на экране. Обучение при первом
-    // запуске управляет фокусом само.
+    // Accessibility: focus the piano roll right away so arrow keys work without Tab.
+    // Deferred because the editor is not on screen yet in the constructor. The first-run
+    // onboarding manages focus itself.
     juce::Component::SafePointer<OpenTuneAudioProcessorEditor> safeThis(this);
     juce::Timer::callAfterDelay(150, [safeThis] {
         if (safeThis == nullptr)
@@ -700,8 +700,8 @@ void OpenTuneAudioProcessorEditor::timerCallback()
             }
         }
         if (allDone) {
-            // Доступность: зрячий видит, как исчезает заставка «Processing audio» и появляются
-            // ноты. Говорим итог: сколько нот найдено или что анализ не удался.
+            // Accessibility: sighted users see the "Processing audio" overlay disappear and notes
+            // appear. Announce the result: how many notes were found or that analysis failed.
             int noteCount = 0;
             bool failed = false;
             for (const auto& key : originalF0OverlayTargetContentKeys_) {
@@ -1265,7 +1265,7 @@ void OpenTuneAudioProcessorEditor::applyThemeToEditor(ThemeId themeId)
 
 void OpenTuneAudioProcessorEditor::undoRequested()
 {
-    // Доступность: зрячий видит, что вернулось; скринридеру говорим, какое действие отменено.
+    // Accessibility: sighted users see what came back; tell screen readers which action was undone.
     if (auto* action = processorRef_.getUndoManager().undo()) {
         syncContentProjectionToPianoRoll();
         a11y::announce(pianoRoll_, Loc::format(LOC_RAW("Undone: {0}"), action->getDescription()));
@@ -1472,8 +1472,8 @@ void OpenTuneAudioProcessorEditor::recordRequested()
             }
 
             if (refreshed == 0) {
-                // Этот звук уже прочитан и не менялся: зрячий просто ничего не видит, а без
-                // сообщения непонятно, сработала ли кнопка.
+                // This audio was already read and is unchanged: nothing visible happens, and without
+                // a message it is unclear whether the button worked.
                 a11y::announce(pianoRoll_, LOC_RAW("Audio already read"));
                 return;
             }

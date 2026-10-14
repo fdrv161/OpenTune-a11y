@@ -220,7 +220,7 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
                                         const std::vector<Note>& notes, int index) {
         handleKeyboardNote(event, notes, index);
     };
-    // То же время, что рисуется как курсор воспроизведения (с учётом ещё не принятой хостом перемотки).
+    // Same time as the drawn playhead (including a seek the host has not accepted yet).
     toolCtx.getPlayheadTimelineSeconds = [this]() { return playheadTimeForPaint_; };
     toolCtx.notifyToolChangedFromKeyboard = [this](ToolId tool) {
         const auto name = keyboardToolName(tool);
@@ -710,9 +710,9 @@ PianoRollComponent::PianoRollComponent(const PlayHeadState& playHeadState,
     overlay_ = std::make_unique<PianoRollOverlayComponent>(*this);
     addAndMakeVisible(*overlay_);
     overlay_->setInterceptsMouseClicks(false, false);
-    // Слой только рисует поверх нот: скринридеру он не нужен.
+    // The overlay only paints on top of the notes; screen readers do not need it.
     overlay_->setAccessible(false);
-    // Вертикальная прокрутка — только мышью; NVDA читал её как «scroll bar 0».
+    // The vertical scroll bar is mouse-only; NVDA read it as "scroll bar 0".
     verticalScrollBar_.setAccessible(false);
 }
 
@@ -5650,13 +5650,13 @@ ViewMapper PianoRollComponent::makeViewMapperForView(const ViewportState& view) 
 }
 
 // ============================================================================
-// Доступность: окно нот для скринридера, озвучка и прослушивание нот с клавиатуры
+// Accessibility: piano roll for screen readers, note speech and keyboard audition
 // ============================================================================
 
 std::unique_ptr<juce::AccessibilityHandler> PianoRollComponent::createAccessibilityHandler()
 {
-    // Заголовок считается при каждом запросе: NVDA+Стрелка вверх читает текущую ноту
-    // без таймеров и лишних событий.
+    // The title is computed on every request so NVDA+Up Arrow reads the current note
+    // without timers or extra events.
     class NotesAccessibilityHandler final : public juce::AccessibilityHandler {
     public:
         explicit NotesAccessibilityHandler(PianoRollComponent& owner)
@@ -5689,7 +5689,7 @@ juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& n
         return {};
 
     const auto& note = notes[static_cast<size_t>(index)];
-    // originalPitch — спетая высота; у старых проектов и нарисованных нот её может не быть.
+    // originalPitch is the sung pitch; old projects and drawn notes may not have it.
     const float sungHz = note.originalPitch > 0.0f ? note.originalPitch : note.pitch;
     if (sungHz <= 0.0f)
         return {};
@@ -5702,12 +5702,12 @@ juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& n
         return juce::String::fromUTF8(NoteSpeech::describeMidi(midi, sharpWord).c_str());
     };
 
-    // При переходе стрелками и после сдвига — только то, как нота звучит сейчас (цель).
-    // Спетую высоту и остальное говорит клавиша I (NoteDetail::Full).
+    // When navigating and after a move, speak only how the note sounds now (the target).
+    // The sung pitch and the rest are spoken by the I key (NoteDetail::Full).
     if (detail == NoteDetail::Target)
         return text(targetMidi);
     if (detail == NoteDetail::Navigation) {
-        // С инструментом модуляции или дрейфа добавляем его значение: им сейчас и правят ноту.
+        // With the modulation or drift tool add its value: that is what is being edited.
         juce::String line = text(targetMidi);
         if (currentTool_ == ToolId::PitchModulation)
             line << ", " << Loc::format(LOC_RAW("modulation {0}"), modulationPercentText(note));
@@ -5716,11 +5716,11 @@ juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& n
         return line;
     }
 
-    // Время — на шкале проекта, как в REAPER, а не внутри аудиофайла.
+    // Times are on the project timeline, as in the host, not inside the audio file.
     const double timelineStart = sourceTimeToTimelineTime(note.startTime);
     const double timelineEnd = sourceTimeToTimelineTime(note.endTime);
 
-    // Номер по времени начала, а не по положению в массиве.
+    // Ordinal by start time, not by array position.
     int ordinal = 1;
     for (const auto& other : notes)
         if (other.startTime < note.startTime)
@@ -5758,7 +5758,7 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
                 auditionNote(notes[static_cast<size_t>(index)]);
             return;
         case Event::PitchMoved:
-            // После сдвига важна только новая высота; звук — когда пересчитается коррекция.
+            // After a move only the new pitch matters; audio plays once the correction is re-rendered.
             a11y::announce(*this, describeKeyboardNote(notes, index, NoteDetail::Target));
             scheduleAuditionAfterRender(index);
             return;
@@ -5774,8 +5774,8 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
                                       + describeKeyboardNote(notes, index, NoteDetail::Navigation));
             return;
         case Event::CursorOutsideNote: {
-            // Называем время курсора так, как его видит плагин (время проекта, как в REAPER),
-            // и время выбранной ноты: сразу понятно, куда переставить курсор.
+            // Speak the cursor time as the plugin sees it (project time, as in the host)
+            // and the selected note's time, so it is clear where to move the cursor.
             juce::String line = Loc::format(LOC_RAW("Cursor at {0} s is not on a note"),
                                             juce::String(playheadTimeForPaint_, 2));
             if (index >= 0 && index < static_cast<int>(notes.size())) {
@@ -5794,7 +5794,7 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
         case Event::DriftChanged:
             if (index >= 0 && index < static_cast<int>(notes.size())) {
                 const auto& note = notes[static_cast<size_t>(index)];
-                // Только новое значение, как подсказка у мыши зрячих: «40%», «+80%».
+                // Only the new value, like the drag tooltip: "40%", "+80%".
                 a11y::announce(*this, event == Event::ModulationChanged ? modulationPercentText(note)
                                                                         : driftPercentText(note));
                 scheduleAuditionAfterRender(index);
@@ -5812,7 +5812,7 @@ void PianoRollComponent::auditionNote(const Note& note)
     if (noteAudition_ == nullptr || audioBuffer_ == nullptr || audioBufferSampleRate_ <= 0.0)
         return;
 
-    // Время нот — во времени исходного аудио, поэтому индекс в буфере считается напрямую.
+    // Note times are in source audio time, so the buffer index is computed directly.
     const double sampleRate = audioBufferSampleRate_;
     const int totalSamples = audioBuffer_->getNumSamples();
     const int startSample = juce::jlimit(0, totalSamples,
@@ -5823,8 +5823,8 @@ void PianoRollComponent::auditionNote(const Note& note)
     if (numSamples <= 0)
         return;
 
-    // Как при экспорте: исходный вокал, поверх — уже рассчитанная коррекция, если она готова.
-    // Рассчитанный звук хранится на частоте рендера, поэтому накладываем только при совпадении частот.
+    // As in export: the original vocal with the rendered correction overlaid where available.
+    // Rendered audio is stored at the render rate, so overlay only when the rates match.
     juce::AudioBuffer<float> segment(audioBuffer_->getNumChannels(), numSamples);
     for (int channel = 0; channel < segment.getNumChannels(); ++channel)
         segment.copyFrom(channel, 0, *audioBuffer_, channel, startSample, numSamples);
@@ -5838,7 +5838,7 @@ void PianoRollComponent::auditionNote(const Note& note)
     noteAudition_->play(segment, sampleRate, 0, numSamples);
 }
 
-// Те же названия, что у кнопок инструментов на правой панели (ParameterPanel).
+// Same names as the tool buttons in the parameter panel (ParameterPanel).
 juce::String PianoRollComponent::keyboardToolName(ToolId tool) const
 {
     switch (tool) {
@@ -5858,10 +5858,10 @@ juce::String PianoRollComponent::keyboardToolName(ToolId tool) const
     }
 }
 
-// Формат как у подсказки рядом с мышью при перетаскивании (drawModDriftDragPreview).
+// Same format as the drag tooltip (drawModDriftDragPreview).
 juce::String PianoRollComponent::modulationPercentText(const Note& note) const
 {
-    // Отрицательное значение — нота следует общей ручке Retune Speed.
+    // A negative value means the note follows the global Retune Speed knob.
     const float value = note.retuneSpeed >= 0.0f ? note.retuneSpeed : currentRetuneSpeed_;
     return juce::String::formatted("%.0f%%", value * 100.0f);
 }
@@ -5872,7 +5872,7 @@ juce::String PianoRollComponent::driftPercentText(const Note& note) const
 }
 
 namespace {
-// Таймер с обработчиком-лямбдой: PianoRollComponent сам Timer не наследует.
+// Lambda-driven timer: PianoRollComponent does not inherit from Timer itself.
 class CallbackTimer final : public juce::Timer {
 public:
     explicit CallbackTimer(std::function<void()> callback) : callback_(std::move(callback)) {}
@@ -5889,7 +5889,7 @@ void PianoRollComponent::scheduleAuditionAfterRender(int noteIndex)
     pendingAuditionTicks_ = 0;
     if (pendingAuditionTimer_ == nullptr)
         pendingAuditionTimer_ = std::make_unique<CallbackTimer>([this] { tickPendingAudition(); });
-    // Каждый новый сдвиг перезапускает ожидание: при быстрых нажатиях звучит только итог.
+    // Each new move restarts the wait, so rapid key presses play only the final result.
     pendingAuditionTimer_->startTimer(150);
 }
 
@@ -5903,8 +5903,8 @@ void PianoRollComponent::tickPendingAudition()
             settled = cache->isCanonicalSettled();
     }
 
-    // Первые 2 тика ждём в любом случае: рендер мог ещё не успеть встать в очередь.
-    // Дольше ~5 секунд не ждём — играем то, что есть.
+    // Always wait the first 2 ticks: the render may not have been queued yet.
+    // Do not wait longer than ~5 seconds; play whatever is there.
     constexpr int kMinTicks = 2;
     constexpr int kMaxTicks = 35;
     if (pendingAuditionTicks_ < kMinTicks || (!settled && pendingAuditionTicks_ < kMaxTicks))

@@ -152,7 +152,7 @@ public:
     void onPitchRevisionChanged();
     void setPianoKeyAudition(PianoKeyAudition* audition) { pianoKeyAudition_ = audition; }
     void setNoteAudition(NoteAudition* audition) { noteAudition_ = audition; }
-    /** Доступ к уже исправленному звуку контента — для прослушивания ноты с клавиатуры. */
+    /** Access to a content's rendered (corrected) audio, for keyboard note audition. */
     using RenderCacheProvider = std::function<std::shared_ptr<const RenderCache>(ContentKey)>;
     void setRenderCacheProvider(RenderCacheProvider provider) { renderCacheProvider_ = std::move(provider); }
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
@@ -691,7 +691,7 @@ private:
     PianoKeyAudition* pianoKeyAudition_ = nullptr;
     NoteAudition* noteAudition_ = nullptr;
 
-    // Доступность: озвучка ноты, выбранной с клавиатуры, и прослушивание её вокала.
+    // Accessibility: speech for the keyboard-selected note and audition of its vocal.
     void handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEvent event, const std::vector<Note>& notes, int index);
     enum class NoteDetail { Navigation, Target, Full };
     juce::String describeKeyboardNote(const std::vector<Note>& notes, int index, NoteDetail detail) const;

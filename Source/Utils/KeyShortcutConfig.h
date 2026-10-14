@@ -340,7 +340,7 @@ inline const ShortcutInfo kShortcutInfos[] = {
 #else
     { ShortcutId::ToolODSelect, "shared.shortcuts.toolODSelect", Loc::Keys::kToolODSelect, { KeyBinding(juce::KeyPress::F1Key, {}) } },
     { ShortcutId::ToolODPitch, "shared.shortcuts.toolODPitch", Loc::Keys::kToolODPitch, { KeyBinding(juce::KeyPress::F2Key, {}) } },
-    { ShortcutId::ToolODPitchModulation, "shared.shortcuts.toolODPitchModulation", Loc::Keys::kToolODPitchModulation, { KeyBinding(juce::KeyPress::F3Key, {}) } },  // F3/F5: свободные клавиши между F2 и F4/F6
+    { ShortcutId::ToolODPitchModulation, "shared.shortcuts.toolODPitchModulation", Loc::Keys::kToolODPitchModulation, { KeyBinding(juce::KeyPress::F3Key, {}) } },  // F3/F5: free keys next to F2 and F4/F6
     { ShortcutId::ToolODPitchDrift, "shared.shortcuts.toolODPitchDrift", Loc::Keys::kToolODPitchDrift, { KeyBinding(juce::KeyPress::F5Key, {}) } },
     { ShortcutId::ToolODVolumeEnvelope, "shared.shortcuts.toolODVolumeEnvelope", Loc::Keys::kToolODVolumeEnvelope, { KeyBinding(juce::KeyPress::F4Key, {}) } },
     { ShortcutId::ToolODScissors, "shared.shortcuts.toolODScissors", Loc::Keys::kToolODScissors, { KeyBinding(juce::KeyPress::F6Key, {}) } },

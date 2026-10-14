@@ -42,7 +42,7 @@ constexpr const char* kSharedEqSuppressRemoveConfirmationKey = "shared.eq.suppre
 constexpr const char* kSharedOnboardingShownKey = "shared.onboardingShown";
 constexpr const char* kPluginEditorSizeKey = "defaultSize";
 constexpr const char* kShortcutSchemaVersionKey = "shared.shortcuts.schemaVersion";
-// 2: модуляция и дрейф тона получили клавиши F3/F5 по умолчанию (Windows).
+// 2: Pitch Modulation / Pitch Drift got default keys F3 / F5 (Windows).
 constexpr int kShortcutSchemaVersion = 2;
 
 juce::File resolveSettingsDirectory(const AppPreferences::StorageOptions& storageOptions)
@@ -280,10 +280,10 @@ KeyShortcutConfig::KeyShortcutSettings decodeShortcutSettings(const juce::Proper
 {
     auto settings = KeyShortcutConfig::KeyShortcutSettings::getDefault();
     const int storedSchemaVersion = properties.getIntValue(kShortcutSchemaVersionKey, 0);
-    // Схема 1 добавила привязки мыши; повторно их не подмешиваем.
+    // Schema 1 added mouse bindings; do not merge them in again.
     const bool migrateMouseDefaults = storedSchemaVersion < 1;
-    // Схема 2: раньше у модуляции и дрейфа тона клавиш не было, и в настройках сохранилась
-    // пустая строка. Её не считаем осознанным выбором пользователя и берём новые F3/F5.
+    // Schema 2: modulation and drift used to have no keys, so settings stored
+    // an empty string. Do not treat it as a user choice; adopt the new F3 / F5.
     const bool adoptNewToolDefaults = storedSchemaVersion < 2;
 
     for (const auto& info : KeyShortcutConfig::kShortcutInfos) {

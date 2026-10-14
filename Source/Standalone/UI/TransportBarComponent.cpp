@@ -707,8 +707,8 @@ void BpmValueField::cancelEdit()
 UnifiedToolbarButton::UnifiedToolbarButton(const juce::String& name, juce::Path iconPath, juce::Path toggledIconPath)
     : juce::Button(name), iconPath_(iconPath), toggledIconPath_(toggledIconPath)
 {
-    // Доступность: кнопки панели (File, Edit, View, Record и др.) должны достигаться по Tab.
-    // Щелчок мышью по-прежнему не забирает фокус, чтобы клавиши оставались в окне нот.
+    // Accessibility: toolbar buttons (File, Edit, View, Record, ...) must be reachable with Tab.
+    // A mouse click still does not take focus, so keys keep going to the piano roll.
     setWantsKeyboardFocus(true);
     setMouseClickGrabsKeyboardFocus(false);
 }
@@ -1208,7 +1208,7 @@ TransportBarComponent::TransportBarComponent()
     scaleTypeSelector_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(scaleTypeSelector_);
 
-    // Доступность: без имени NVDA читал только значение («combo box C»).
+    // Accessibility: without a title NVDA read only the value ("combo box C").
     scaleRootSelector_.setTitle(LOC(kRootNote));
     scaleTypeSelector_.setTitle(LOC(kScale));
 
