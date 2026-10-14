@@ -83,9 +83,18 @@ public:
         for (int i = 0; i < tabBar.getNumTabs(); ++i)
             if (auto* tabButton = tabBar.getTabButton(i))
                 tabButton->setWantsKeyboardFocus(true);
+        // The tab bar acted as a keyboard focus container: Tab cycled through the tab buttons
+        // only and never reached the page or the Close button.
+        tabBar.setFocusContainerType(juce::Component::FocusContainerType::none);
+        tabbedComponent_.setFocusContainerType(juce::Component::FocusContainerType::none);
         tabbedComponent_.onTabChanged = [this](const juce::String& name) {
             a11y::announce(*this, name);
         };
+
+        // Sliders on the pages: Tab lands in the value box editor, which has no name.
+        for (int i = 0; i < tabbedComponent_.getNumTabs(); ++i)
+            if (auto* page = tabbedComponent_.getTabContentComponent(i))
+                addSliderEditorNamers(*page);
 
         closeButton_.setButtonText(LOC(kClose));
         closeButton_.setColour(juce::TextButton::buttonColourId, UIColors::accent);
@@ -168,6 +177,56 @@ private:
         }
     };
 
+    // Names the TextEditor that a slider's value box opens with the slider's title.
+    // The value box is recreated on look-and-feel changes (e.g. theme switch), so the hook
+    // is re-installed whenever the slider's children change.
+    class SliderEditorNamer final : private juce::ComponentListener
+    {
+    public:
+        explicit SliderEditorNamer(juce::Slider& slider) : slider_(&slider)
+        {
+            slider.addComponentListener(this);
+            hookValueBox();
+        }
+
+        ~SliderEditorNamer() override
+        {
+            if (slider_ != nullptr)
+                slider_->removeComponentListener(this);
+        }
+
+    private:
+        void componentChildrenChanged(juce::Component&) override { hookValueBox(); }
+
+        void hookValueBox()
+        {
+            if (slider_ == nullptr)
+                return;
+            for (auto* child : slider_->getChildren()) {
+                if (auto* valueBox = dynamic_cast<juce::Label*>(child)) {
+                    valueBox->onEditorShow = [valueBox] {
+                        auto* editor = valueBox->getCurrentTextEditor();
+                        auto* owner = valueBox->getParentComponent();
+                        if (editor != nullptr && owner != nullptr)
+                            editor->setTitle(owner->getTitle());
+                    };
+                }
+            }
+        }
+
+        juce::Component::SafePointer<juce::Slider> slider_;
+    };
+
+    void addSliderEditorNamers(juce::Component& parent)
+    {
+        for (auto* child : parent.getChildren()) {
+            if (auto* slider = dynamic_cast<juce::Slider*>(child))
+                sliderEditorNamers_.push_back(std::make_unique<SliderEditorNamer>(*slider));
+            else
+                addSliderEditorNamers(*child);
+        }
+    }
+
     // Preference pages are laid out as "caption label, then control". JUCE exposes a label's
     // text twice (as name and value), while combo boxes and sliders get no name at all.
     // Move the caption into the control's title and hide the caption. Buttons with their own
@@ -219,6 +278,8 @@ private:
     }
 
     AnnouncingTabs tabbedComponent_;
+    // Declared after tabbedComponent_ so they are destroyed first, while the sliders still exist.
+    std::vector<std::unique_ptr<SliderEditorNamer>> sliderEditorNamers_;
     juce::TextButton closeButton_;
     OpenTuneLookAndFeel openTuneLookAndFeel_;
     AuroraLookAndFeel auroraLookAndFeel_;
