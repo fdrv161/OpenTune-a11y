@@ -5792,6 +5792,8 @@ juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& n
     // The sung pitch and the rest are spoken by the I key (NoteDetail::Full).
     if (detail == NoteDetail::Target)
         return text(targetMidi);
+    if (detail == NoteDetail::Sung)
+        return text(sungMidi);
     if (detail == NoteDetail::Navigation) {
         // With the modulation or drift tool add its value: that is what is being edited.
         juce::String line = text(targetMidi);
@@ -5910,6 +5912,16 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
                 scheduleAuditionAfterRender(index);
             }
             return;
+        case Event::AuditionOriginal:
+            if (index >= 0 && index < static_cast<int>(notes.size())) {
+                if (pendingAuditionTimer_ != nullptr)
+                    pendingAuditionTimer_->stopTimer();
+                a11y::announce(*this, Loc::format(LOC_RAW("As sung: {0}"),
+                                                  describeKeyboardNote(notes, index, NoteDetail::Sung)));
+                // Plays even with the edit audition turned off: the user asked for it explicitly.
+                auditionNote(notes[static_cast<size_t>(index)], false);
+            }
+            return;
         case Event::SingleNoteNeeded:
             a11y::announce(*this, LOC_RAW("Select a single note"));
             return;
@@ -5936,7 +5948,7 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
     }
 }
 
-void PianoRollComponent::auditionNote(const Note& note)
+void PianoRollComponent::auditionNote(const Note& note, bool withCorrection)
 {
     if (noteAudition_ == nullptr || audioBuffer_ == nullptr || audioBufferSampleRate_ <= 0.0)
         return;
@@ -5958,7 +5970,7 @@ void PianoRollComponent::auditionNote(const Note& note)
     for (int channel = 0; channel < segment.getNumChannels(); ++channel)
         segment.copyFrom(channel, 0, *audioBuffer_, channel, startSample, numSamples);
 
-    if (renderCacheProvider_ != nullptr && editedContentKey_.isValid()
+    if (withCorrection && renderCacheProvider_ != nullptr && editedContentKey_.isValid()
         && std::abs(sampleRate - TimeCoordinate::kRenderSampleRate) < 1.0) {
         if (const auto cache = renderCacheProvider_(editedContentKey_))
             cache->overlayCanonicalAudio(segment, 0, numSamples, startSample);

@@ -849,6 +849,8 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     const bool altOnly = mods.isAltDown() && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isCommandDown();
     const bool upOrDown = keyCode == juce::KeyPress::upKey || keyCode == juce::KeyPress::downKey;
     const bool isInfoKey = keyCode == 'I' || keyCode == 'i';
+    const bool isResetKey = keyCode == 'R' || keyCode == 'r';
+    const bool isOriginalKey = keyCode == 'O' || keyCode == 'o';
     const bool isSplitKey = keyCode == 'X' || keyCode == 'x';
     const bool isMergeKey = keyCode == 'J' || keyCode == 'j';
     const bool isHomeOrEnd = keyCode == juce::KeyPress::homeKey || keyCode == juce::KeyPress::endKey;
@@ -860,13 +862,13 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     if (plain && keyCode == juce::KeyPress::returnKey && openDyne)
         return applyNoteDefaultActionByKeyboard();
 
-    // Extra mouse-free keys (Alt+Up/Down, Home, End, I, X, J) do not override a binding
+    // Extra mouse-free keys (Alt+Up/Down, Home, End, I, R, O, X, J) do not override a binding
     // the user assigned to something else in the shortcut settings.
     const bool leftOrRight = keyCode == juce::KeyPress::leftKey || keyCode == juce::KeyPress::rightKey;
     // Ctrl+Left/Right move the end of the note, Ctrl+Shift+Left/Right its start.
     const bool resizeKey = leftOrRight && mods.isCtrlDown() && !mods.isAltDown();
     const bool extraKey = (altOnly && upOrDown) || (shiftOnly && leftOrRight) || resizeKey
-        || (plain && (isInfoKey || isSplitKey || isMergeKey || isHomeOrEnd));
+        || (plain && (isInfoKey || isResetKey || isOriginalKey || isSplitKey || isMergeKey || isHomeOrEnd));
     if (extraKey
         && KeyShortcutConfig::findShortcutForBinding(ctx_.getShortcutSettings(),
                                                      KeyShortcutConfig::KeyBinding(keyCode, mods))
@@ -918,6 +920,24 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
             notifyKeyboardNote(KeyboardNoteEvent::NoSelection, notes, -1);
         else
             notifyKeyboardNote(KeyboardNoteEvent::Info, notes, selected.front());
+        return true;
+    }
+
+    // R: back to the sung pitch. Ctrl+Z only goes back step by step, so after many edits
+    // there was no quick way to return one note to how it was sung.
+    if (isResetKey) {
+        moveSelectedNotesPitchByKeyboard(0, false, true);
+        return true;
+    }
+    // O: hear the selected note as sung, without the correction; nothing is changed.
+    if (isOriginalKey) {
+        const auto selected = collectSelectedNoteIndices(notes);
+        if (noteCount == 0)
+            notifyKeyboardNote(KeyboardNoteEvent::NoNotes, notes, -1);
+        else if (selected.empty())
+            notifyKeyboardNote(KeyboardNoteEvent::NoSelection, notes, -1);
+        else
+            notifyKeyboardNote(KeyboardNoteEvent::AuditionOriginal, notes, selected.front());
         return true;
     }
 
@@ -1526,7 +1546,7 @@ void PianoRollToolHandler::switchToolFromKeyboard(ToolId tool)
         ctx_.notifyToolChangedFromKeyboard(tool);
 }
 
-void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool fineCents)
+void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool fineCents, bool resetToSung)
 {
     const auto& notes = committedNotes(ctx_);
     const auto selectedIndices = collectSelectedNoteIndices(notes);
@@ -1558,7 +1578,11 @@ void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool 
         const float initialOffset = note.pitchOffset;
         const float currentMidi = baseMidi + initialOffset;
         float targetMidi = currentMidi;
-        if (noSnap || fineCents) {
+        if (resetToSung) {
+            // originalPitch is the sung pitch; notes without it have nothing to return to.
+            if (note.originalPitch > 0.0f)
+                targetMidi = PitchUtils::freqToMidi(note.originalPitch);
+        } else if (noSnap || fineCents) {
             targetMidi += static_cast<float>(direction) * 0.01f;
         } else if (scaleSnapEnabled) {
             const float firstCandidate = direction > 0
@@ -1586,8 +1610,12 @@ void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool 
         rangeStart = std::min(rangeStart, note.startTime);
         rangeEnd = std::max(rangeEnd, note.endTime);
     }
-    if (changedOffsets.empty())
+    if (changedOffsets.empty()) {
+        // Resetting a note that is already at its sung pitch: still say the pitch, so R is not silent.
+        if (resetToSung)
+            notifyKeyboardNote(KeyboardNoteEvent::PitchMoved, notes, selectedIndices.front());
         return;
+    }
 
     const F0FrameRange editRange = ctx_.getF0Timeline().rangeForTimes(rangeStart, rangeEnd);
     const auto contentSnapshot = ctx_.getEditableContentSnapshot();

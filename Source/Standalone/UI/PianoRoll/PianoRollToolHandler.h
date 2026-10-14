@@ -108,7 +108,8 @@ public:
         VolumeChanged,      // arrows or Enter with the Volume Envelope tool
         RangeSelected,      // Shift+Left/Right: index is the note at the moving end
         NoteResized,        // Ctrl(+Shift)+Left/Right: index is the resized note
-        SingleNoteNeeded    // the action works on one selected note only
+        SingleNoteNeeded,   // the action works on one selected note only
+        AuditionOriginal    // O: play the note as sung, without correction
     };
 
     // PianoRoll 组件提供的回调上下文。
@@ -333,7 +334,7 @@ private:
     // §8.4: Delete key removes selected handle (non-endpoint).
     bool handleTimeToolDeleteSelected();
     bool handleNoteArrowKey(const juce::KeyPress& key);
-    void moveSelectedNotesPitchByKeyboard(int direction, bool fineCents = false);
+    void moveSelectedNotesPitchByKeyboard(int direction, bool fineCents = false, bool resetToSung = false);
     void selectNoteFromKeyboard(const std::vector<Note>& notes, int index);
     void extendSelectionByKeyboard(bool moveRight);
     void resizeSelectedNoteByKeyboard(bool startEdge, int direction);
