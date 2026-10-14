@@ -942,6 +942,8 @@ inline juce::String get(Language lang, const char* key)
         { "Audio read, notes: {0}", "Audio read, notes: {0}", "音频已读取，音符：{0}", "オーディオを読み込みました。ノート：{0}", "Аудио прочитано, нот: {0}", "Audio leído, notas: {0}" },
         { "Audio analysis failed", "Audio analysis failed", "音频分析失败", "オーディオ解析に失敗しました", "Не удалось проанализировать аудио", "Falló el análisis del audio" },
         { "Audio already read", "Audio already read", "音频已读取过", "オーディオは読み込み済みです", "Это аудио уже прочитано", "El audio ya se leyó" },
+        { "modulation {0}", "modulation {0}", "调制 {0}", "変調 {0}", "модуляция {0}", "modulación {0}" },
+        { "drift {0}", "drift {0}", "漂移 {0}", "ドリフト {0}", "дрейф {0}", "deriva {0}" },
         { "Undone: {0}", "Undone: {0}", "已撤销：{0}", "元に戻しました：{0}", "Отменено: {0}", "Deshecho: {0}" },
         { "Redone: {0}", "Redone: {0}", "已重做：{0}", "やり直しました：{0}", "Повторено: {0}", "Rehecho: {0}" },
         { "Nothing to undo", "Nothing to undo", "没有可撤销的操作", "元に戻す操作はありません", "Нечего отменять", "Nada que deshacer" },

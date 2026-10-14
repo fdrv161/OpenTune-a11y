@@ -42,7 +42,8 @@ constexpr const char* kSharedEqSuppressRemoveConfirmationKey = "shared.eq.suppre
 constexpr const char* kSharedOnboardingShownKey = "shared.onboardingShown";
 constexpr const char* kPluginEditorSizeKey = "defaultSize";
 constexpr const char* kShortcutSchemaVersionKey = "shared.shortcuts.schemaVersion";
-constexpr int kShortcutSchemaVersion = 1;
+// 2: модуляция и дрейф тона получили клавиши F3/F5 по умолчанию (Windows).
+constexpr int kShortcutSchemaVersion = 2;
 
 juce::File resolveSettingsDirectory(const AppPreferences::StorageOptions& storageOptions)
 {
@@ -278,8 +279,12 @@ TrackColorMode trackColorModeFromToken(const juce::String& token)
 KeyShortcutConfig::KeyShortcutSettings decodeShortcutSettings(const juce::PropertiesFile& properties)
 {
     auto settings = KeyShortcutConfig::KeyShortcutSettings::getDefault();
-    const bool migrateMouseDefaults = properties.getIntValue(kShortcutSchemaVersionKey, 0)
-        < kShortcutSchemaVersion;
+    const int storedSchemaVersion = properties.getIntValue(kShortcutSchemaVersionKey, 0);
+    // Схема 1 добавила привязки мыши; повторно их не подмешиваем.
+    const bool migrateMouseDefaults = storedSchemaVersion < 1;
+    // Схема 2: раньше у модуляции и дрейфа тона клавиш не было, и в настройках сохранилась
+    // пустая строка. Её не считаем осознанным выбором пользователя и берём новые F3/F5.
+    const bool adoptNewToolDefaults = storedSchemaVersion < 2;
 
     for (const auto& info : KeyShortcutConfig::kShortcutInfos) {
         if (!properties.containsKey(info.storageKey))
@@ -287,7 +292,11 @@ KeyShortcutConfig::KeyShortcutSettings decodeShortcutSettings(const juce::Proper
 
         const auto stored = properties.getValue(info.storageKey, {});
         if (stored.isEmpty()) {
-            settings.bindings[static_cast<size_t>(info.id)].bindings.clear();
+            const bool keepNewDefault = adoptNewToolDefaults
+                && (info.id == KeyShortcutConfig::ShortcutId::ToolODPitchModulation
+                    || info.id == KeyShortcutConfig::ShortcutId::ToolODPitchDrift);
+            if (!keepNewDefault)
+                settings.bindings[static_cast<size_t>(info.id)].bindings.clear();
             continue;
         }
 

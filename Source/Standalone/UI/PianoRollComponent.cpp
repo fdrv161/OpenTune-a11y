@@ -222,6 +222,11 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
     };
     // То же время, что рисуется как курсор воспроизведения (с учётом ещё не принятой хостом перемотки).
     toolCtx.getPlayheadTimelineSeconds = [this]() { return playheadTimeForPaint_; };
+    toolCtx.notifyToolChangedFromKeyboard = [this](ToolId tool) {
+        const auto name = keyboardToolName(tool);
+        if (name.isNotEmpty())
+            a11y::announce(*this, name);
+    };
     toolCtx.getPianoKeyWidth = [this]() { return getTimelineContentStartX(); };
     toolCtx.getContentProjection = [this]() { return activeContentProjection(); };
     toolCtx.getHandDrawPreviewBounds = [this]() { return getHandDrawPreviewBounds(); };
@@ -5699,8 +5704,17 @@ juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& n
 
     // При переходе стрелками и после сдвига — только то, как нота звучит сейчас (цель).
     // Спетую высоту и остальное говорит клавиша I (NoteDetail::Full).
-    if (detail == NoteDetail::Target || detail == NoteDetail::Navigation)
+    if (detail == NoteDetail::Target)
         return text(targetMidi);
+    if (detail == NoteDetail::Navigation) {
+        // С инструментом модуляции или дрейфа добавляем его значение: им сейчас и правят ноту.
+        juce::String line = text(targetMidi);
+        if (currentTool_ == ToolId::PitchModulation)
+            line << ", " << Loc::format(LOC_RAW("modulation {0}"), modulationPercentText(note));
+        else if (currentTool_ == ToolId::PitchDrift)
+            line << ", " << Loc::format(LOC_RAW("drift {0}"), driftPercentText(note));
+        return line;
+    }
 
     // Время — на шкале проекта, как в REAPER, а не внутри аудиофайла.
     const double timelineStart = sourceTimeToTimelineTime(note.startTime);
@@ -5718,6 +5732,10 @@ juce::String PianoRollComponent::describeKeyboardNote(const std::vector<Note>& n
          << ", " << Loc::format(LOC_RAW("target {0}"), text(targetMidi))
          << ", " << Loc::format(LOC_RAW("start {0} s, length {1} s"),
                                 juce::String(timelineStart, 2), juce::String(timelineEnd - timelineStart, 2));
+    if (isOpenDyne()) {
+        line << ", " << Loc::format(LOC_RAW("modulation {0}"), modulationPercentText(note))
+             << ", " << Loc::format(LOC_RAW("drift {0}"), driftPercentText(note));
+    }
     return line;
 }
 
@@ -5772,6 +5790,16 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
         case Event::NoAdjacentNote:
             a11y::announce(*this, LOC_RAW("No adjacent next note"));
             return;
+        case Event::ModulationChanged:
+        case Event::DriftChanged:
+            if (index >= 0 && index < static_cast<int>(notes.size())) {
+                const auto& note = notes[static_cast<size_t>(index)];
+                // Только новое значение, как подсказка у мыши зрячих: «40%», «+80%».
+                a11y::announce(*this, event == Event::ModulationChanged ? modulationPercentText(note)
+                                                                        : driftPercentText(note));
+                scheduleAuditionAfterRender(index);
+            }
+            return;
         case Event::AllSelected:
             a11y::announce(*this, Loc::format(LOC_RAW("All notes selected: {0}"),
                                               juce::String(static_cast<int>(notes.size()))));
@@ -5808,6 +5836,39 @@ void PianoRollComponent::auditionNote(const Note& note)
     }
 
     noteAudition_->play(segment, sampleRate, 0, numSamples);
+}
+
+// Те же названия, что у кнопок инструментов на правой панели (ParameterPanel).
+juce::String PianoRollComponent::keyboardToolName(ToolId tool) const
+{
+    switch (tool) {
+        case ToolId::Select:          return LOC(kToolODSelect);
+        case ToolId::Pitch:           return LOC(kToolODPitch);
+        case ToolId::PitchModulation: return LOC(kToolODPitchModulation);
+        case ToolId::PitchDrift:      return LOC(kToolODPitchDrift);
+        case ToolId::VolumeEnvelope:  return LOC(kToolODVolumeEnvelope);
+        case ToolId::Scissors:        return LOC(kToolODScissors);
+        case ToolId::HandDraw:        return LOC(kTooltipHandDraw);
+        case ToolId::DrawNote:        return LOC(kTooltipDrawNote);
+        case ToolId::LineAnchor:      return LOC(kTooltipLineAnchor);
+        case ToolId::Eraser:          return LOC(kEraser);
+        case ToolId::TimeTool:        return LOC_RAW("Time tool");
+        case ToolId::Eq:              return "EQ";
+        default:                      return {};
+    }
+}
+
+// Формат как у подсказки рядом с мышью при перетаскивании (drawModDriftDragPreview).
+juce::String PianoRollComponent::modulationPercentText(const Note& note) const
+{
+    // Отрицательное значение — нота следует общей ручке Retune Speed.
+    const float value = note.retuneSpeed >= 0.0f ? note.retuneSpeed : currentRetuneSpeed_;
+    return juce::String::formatted("%.0f%%", value * 100.0f);
+}
+
+juce::String PianoRollComponent::driftPercentText(const Note& note) const
+{
+    return juce::String::formatted("%+.0f%%", note.pitchDriftScale * 100.0f);
 }
 
 namespace {

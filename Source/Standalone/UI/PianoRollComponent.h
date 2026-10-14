@@ -696,6 +696,9 @@ private:
     enum class NoteDetail { Navigation, Target, Full };
     juce::String describeKeyboardNote(const std::vector<Note>& notes, int index, NoteDetail detail) const;
     void auditionNote(const Note& note);
+    juce::String keyboardToolName(ToolId tool) const;
+    juce::String modulationPercentText(const Note& note) const;
+    juce::String driftPercentText(const Note& note) const;
     void scheduleAuditionAfterRender(int noteIndex);
     void tickPendingAudition();
     RenderCacheProvider renderCacheProvider_;

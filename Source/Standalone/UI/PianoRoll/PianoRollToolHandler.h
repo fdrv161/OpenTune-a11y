@@ -100,7 +100,9 @@ public:
         Merged,             // J: нота склеена со следующей, index — результат
         CursorOutsideNote,  // X: курсор REAPER не на ноте; index — выбранная нота или -1
         NoAdjacentNote,     // J: следующей ноты вплотную нет
-        AllSelected         // Ctrl+A: выбраны все ноты
+        AllSelected,        // Ctrl+A: выбраны все ноты
+        ModulationChanged,  // стрелки или Enter с инструментом «модуляция тона»
+        DriftChanged        // стрелки или Enter с инструментом «дрейф тона»
     };
 
     // PianoRoll 组件提供的回调上下文。
@@ -199,6 +201,8 @@ public:
         std::function<void(KeyboardNoteEvent, const std::vector<Note>&, int)> notifyKeyboardNote;
         // Положение курсора воспроизведения на шкале проекта (секунды) — для резки нот с клавиатуры.
         std::function<double()> getPlayheadTimelineSeconds;
+        // Инструмент сменён клавишей: скринридер называет новый инструмент.
+        std::function<void(ToolId)> notifyToolChangedFromKeyboard;
 
         // === EQ Tool ===
         // 打开 EQ 弹窗预览：参数为主音符 index（纯点击 = mouseDown 记录的 pending
@@ -331,6 +335,11 @@ private:
     std::optional<double> playheadSourceTime() const;
     void splitSelectedNoteAtPlayhead();
     void mergeSelectedNoteWithNext();
+    void adjustSelectedNotesModDriftByKeyboard(int direction, bool fine);
+    bool applyNoteDefaultActionByKeyboard();
+    void switchToolFromKeyboard(ToolId tool);
+    bool commitKeyboardNoteEdit(const std::vector<Note>& work, const std::vector<int>& changedIndices,
+                                const juce::String& undoDescription);
     // Hit-test handles within ±5 px of a TimeGrid handle's output_seconds.
     // Returns 0 if no hit.
     uint64_t hitTestTimeGridHandle(const juce::MouseEvent& e) const;

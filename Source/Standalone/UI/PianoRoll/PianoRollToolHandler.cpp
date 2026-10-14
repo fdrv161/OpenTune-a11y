@@ -716,27 +716,27 @@ bool PianoRollToolHandler::keyPressed(const juce::KeyPress& key,
     const bool isOpenDyne = AudioEditingScheme::usesNotesPrimaryScheme(ctx_.getAudioEditingScheme());
     if (isOpenDyne) {
         if (matches(KeyShortcutConfig::ShortcutId::ToolODSelect)) {
-            ctx_.setCurrentTool(ToolId::Select);
+            switchToolFromKeyboard(ToolId::Select);
             return true;
         }
         if (matches(KeyShortcutConfig::ShortcutId::ToolODPitch)) {
-            ctx_.setCurrentTool(ToolId::Pitch);
+            switchToolFromKeyboard(ToolId::Pitch);
             return true;
         }
         if (matches(KeyShortcutConfig::ShortcutId::ToolODPitchModulation)) {
-            ctx_.setCurrentTool(ToolId::PitchModulation);
+            switchToolFromKeyboard(ToolId::PitchModulation);
             return true;
         }
         if (matches(KeyShortcutConfig::ShortcutId::ToolODPitchDrift)) {
-            ctx_.setCurrentTool(ToolId::PitchDrift);
+            switchToolFromKeyboard(ToolId::PitchDrift);
             return true;
         }
         if (matches(KeyShortcutConfig::ShortcutId::ToolODVolumeEnvelope)) {
-            ctx_.setCurrentTool(ToolId::VolumeEnvelope);
+            switchToolFromKeyboard(ToolId::VolumeEnvelope);
             return true;
         }
         if (matches(KeyShortcutConfig::ShortcutId::ToolODScissors)) {
-            ctx_.setCurrentTool(ToolId::Scissors);
+            switchToolFromKeyboard(ToolId::Scissors);
             return true;
         }
     }
@@ -772,35 +772,35 @@ bool PianoRollToolHandler::keyPressed(const juce::KeyPress& key,
     // ToolTimeTool/ToolAutoTune 与通用 SelectAll/Delete/CancelSelection 两 scheme 共用。
     if (!isOpenDyne) {
         if (matches(KeyShortcutConfig::ShortcutId::ToolDrawNote)) {
-            ctx_.setCurrentTool(ToolId::DrawNote);
+            switchToolFromKeyboard(ToolId::DrawNote);
             return true;
         }
 
         if (matches(KeyShortcutConfig::ShortcutId::ToolSelect)) {
-            ctx_.setCurrentTool(ToolId::Select);
+            switchToolFromKeyboard(ToolId::Select);
             return true;
         }
 
         if (matches(KeyShortcutConfig::ShortcutId::ToolLineAnchor)) {
-            ctx_.setCurrentTool(ToolId::LineAnchor);
+            switchToolFromKeyboard(ToolId::LineAnchor);
             return true;
         }
     }
 
     // EQ 工具两种模式共用（ShortcutId::Eq 可配置，默认 E）
     if (matches(KeyShortcutConfig::ShortcutId::Eq)) {
-        ctx_.setCurrentTool(ToolId::Eq);
+        switchToolFromKeyboard(ToolId::Eq);
         return true;
     }
 
     // HandDraw 两种模式共用
     if (matches(KeyShortcutConfig::ShortcutId::ToolHandDraw)) {
-        ctx_.setCurrentTool(ToolId::HandDraw);
+        switchToolFromKeyboard(ToolId::HandDraw);
         return true;
     }
 
     if (matches(KeyShortcutConfig::ShortcutId::ToolTimeTool)) {
-        ctx_.setCurrentTool(ToolId::TimeTool);
+        switchToolFromKeyboard(ToolId::TimeTool);
         return true;
     }
 
@@ -851,6 +851,13 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     const bool isSplitKey = keyCode == 'X' || keyCode == 'x';
     const bool isMergeKey = keyCode == 'J' || keyCode == 'j';
     const bool isHomeOrEnd = keyCode == juce::KeyPress::homeKey || keyCode == juce::KeyPress::endKey;
+    const bool openDyne = AudioEditingScheme::usesNotesPrimaryScheme(ctx_.getAudioEditingScheme());
+
+    // Enter — то же, что двойной щелчок по ноте у зрячих (OpenDyne): с инструментом модуляции
+    // или дрейфа переключает 100% / 0%, иначе ставит ноту на сетку высоты. Без выбранной ноты
+    // Enter остаётся «Стоп», как в руководстве, поэтому здесь его не отбираем.
+    if (plain && keyCode == juce::KeyPress::returnKey && openDyne)
+        return applyNoteDefaultActionByKeyboard();
 
     // Дополнительные клавиши для работы без мыши (Shift+Вверх/Вниз, Home, End, I, R, X, J) не отбирают
     // сочетание, если пользователь назначил его на что-то в настройках горячих клавиш.
@@ -863,8 +870,13 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
         return false;
 
     if (upOrDown && (plain || shiftOnly)) {
-        // Shift — точная подстройка на 1 цент.
-        moveSelectedNotesPitchByKeyboard(keyCode == juce::KeyPress::upKey ? 1 : -1, shiftOnly);
+        const int direction = keyCode == juce::KeyPress::upKey ? 1 : -1;
+        // Как мышь у зрячих: стрелки меняют то, за что отвечает выбранный инструмент.
+        if (openDyne && (currentTool_ == ToolId::PitchModulation || currentTool_ == ToolId::PitchDrift))
+            adjustSelectedNotesModDriftByKeyboard(direction, shiftOnly);
+        else
+            // Shift — точная подстройка на 1 цент.
+            moveSelectedNotesPitchByKeyboard(direction, shiftOnly);
         return true;
     }
     if (!plain)
@@ -1160,6 +1172,153 @@ void PianoRollToolHandler::mergeSelectedNoteWithNext()
             ctx_.replaceContentNotesForFullMutation, ctx_.republishPlaybackSource));
     }
     notifyKeyboardNote(KeyboardNoteEvent::Merged, newNotes, mergedIndex);
+}
+
+// Общий путь сохранения правки нот с клавиатуры: тот же commitNoteBasedCorrection,
+// что у мыши, с диапазоном по изменённым нотам.
+bool PianoRollToolHandler::commitKeyboardNoteEdit(const std::vector<Note>& work,
+                                                  const std::vector<int>& changedIndices,
+                                                  const juce::String& undoDescription)
+{
+    double rangeStart = std::numeric_limits<double>::max();
+    double rangeEnd = std::numeric_limits<double>::lowest();
+    for (int index : changedIndices) {
+        rangeStart = std::min(rangeStart, work[static_cast<size_t>(index)].startTime);
+        rangeEnd = std::max(rangeEnd, work[static_cast<size_t>(index)].endTime);
+    }
+
+    const F0FrameRange editRange = ctx_.getF0Timeline().rangeForTimes(rangeStart, rangeEnd);
+    const auto contentSnapshot = ctx_.getEditableContentSnapshot();
+    if (changedIndices.empty() || editRange.isEmpty()
+        || contentSnapshot == nullptr || contentSnapshot->pitchCurve == nullptr)
+        return false;
+
+    ctx_.beginNoteDraft();
+    auto& draft = ctx_.getNoteDraft();
+    draft.contentDirty = true;
+    draft.workingNotes = work;
+    ctx_.setUndoDescription(undoDescription);
+    const bool committed = commitNoteBasedCorrection(ctx_, work, editRange);
+    ctx_.clearNoteDraft();
+    if (!committed)
+        ctx_.setUndoDescription({});
+    return committed;
+}
+
+// Стрелки вверх/вниз с инструментом «модуляция тона» или «дрейф тона»: шаг 5%, с Shift 1%.
+// Значения и их смысл — как при перетаскивании мышью (dragNotePitch).
+void PianoRollToolHandler::adjustSelectedNotesModDriftByKeyboard(int direction, bool fine)
+{
+    const auto& notes = committedNotes(ctx_);
+    const auto selected = collectSelectedNoteIndices(notes);
+    if (selected.empty()) {
+        notifyKeyboardNote(notes.empty() ? KeyboardNoteEvent::NoNotes : KeyboardNoteEvent::NoSelection,
+                           notes, -1);
+        return;
+    }
+
+    const bool modulation = currentTool_ == ToolId::PitchModulation;
+    const auto event = modulation ? KeyboardNoteEvent::ModulationChanged : KeyboardNoteEvent::DriftChanged;
+    const float step = static_cast<float>(direction) * (fine ? 0.01f : 0.05f);
+
+    std::vector<Note> work = notes;
+    std::vector<int> changed;
+    for (int index : selected) {
+        auto& note = work[static_cast<size_t>(index)];
+        if (modulation) {
+            // Отрицательное значение — «следовать общей ручке Retune Speed».
+            const float effective = note.retuneSpeed >= 0.0f ? note.retuneSpeed : ctx_.getRetuneSpeed();
+            const float target = juce::jlimit(0.0f, 1.0f, effective + step);
+            if (std::abs(target - effective) <= 0.001f)
+                continue;
+            note.retuneSpeed = target;
+        } else {
+            // Дрейф не ограничен ±100%, как и у мыши (Melodyne допускает 224%, -112% и т.п.).
+            // Стрелка вверх увеличивает число, которое называет NVDA.
+            note.pitchDriftScale += step;
+        }
+        note.dirty = true;
+        changed.push_back(index);
+    }
+
+    if (changed.empty()) {
+        // На краю диапазона (0% или 100% модуляции) — просто называем текущее значение.
+        notifyKeyboardNote(event, notes, selected.front());
+        return;
+    }
+    if (commitKeyboardNoteEdit(work, changed,
+                               modulation ? LOC_RAW("Modulation depth") : LOC_RAW("Drift correction")))
+        notifyKeyboardNote(event, work, changed.front());
+}
+
+// Enter — как двойной щелчок по ноте (handlePitchToolDoubleClick), но для выбранных нот.
+// Возвращает false, если нот не выбрано: тогда Enter работает как «Стоп».
+bool PianoRollToolHandler::applyNoteDefaultActionByKeyboard()
+{
+    const auto& notes = committedNotes(ctx_);
+    const auto selected = collectSelectedNoteIndices(notes);
+    if (selected.empty())
+        return false;
+
+    std::vector<Note> work = notes;
+    std::vector<int> changed;
+
+    if (currentTool_ == ToolId::PitchModulation || currentTool_ == ToolId::PitchDrift) {
+        const bool modulation = currentTool_ == ToolId::PitchModulation;
+        for (int index : selected) {
+            auto& note = work[static_cast<size_t>(index)];
+            float& value = modulation ? note.retuneSpeed : note.pitchDriftScale;
+            value = value > 0.5f ? 0.0f : 1.0f;   // переключение 100% / 0%, как у двойного щелчка
+            note.dirty = true;
+            changed.push_back(index);
+        }
+        const auto event = modulation ? KeyboardNoteEvent::ModulationChanged : KeyboardNoteEvent::DriftChanged;
+        if (commitKeyboardNoteEdit(work, changed,
+                                   modulation ? LOC_RAW("Modulation depth") : LOC_RAW("Drift correction")))
+            notifyKeyboardNote(event, work, changed.front());
+        return true;
+    }
+
+    // Остальные инструменты: поставить ноту на сетку высоты (Pitch Snap). Как у двойного
+    // щелчка, привязка считается от базовой высоты ноты, без текущего сдвига.
+    const auto scaleSnap = ctx_.getActiveScaleSnap ? ctx_.getActiveScaleSnap() : std::nullopt;
+    for (int index : selected) {
+        auto& note = work[static_cast<size_t>(index)];
+        const float baseMidi = PitchUtils::freqToMidi(note.pitch);
+        float snappedMidi = baseMidi;
+        switch (pitchGridMode_) {
+            case PitchGridMode::NoSnap:
+                continue;   // без привязки ставить некуда
+            case PitchGridMode::Chromatic:
+                snappedMidi = std::round(baseMidi);
+                break;
+            case PitchGridMode::KeyScale:
+                snappedMidi = scaleSnap.value_or(ScaleSnapConfig{}).quantizeMidiToActiveScale(baseMidi);
+                break;
+        }
+        const float snappedOffset = snappedMidi - baseMidi;
+        if (std::abs(snappedOffset - note.pitchOffset) < 0.001f)
+            continue;
+        note.pitchOffset = snappedOffset;
+        note.dirty = true;
+        changed.push_back(index);
+    }
+
+    if (changed.empty()) {
+        // Уже на сетке (или привязка выключена): называем текущую высоту.
+        notifyKeyboardNote(KeyboardNoteEvent::PitchMoved, notes, selected.front());
+        return true;
+    }
+    if (commitKeyboardNoteEdit(work, changed, LOC_RAW("Pitch snap")))
+        notifyKeyboardNote(KeyboardNoteEvent::PitchMoved, work, changed.front());
+    return true;
+}
+
+void PianoRollToolHandler::switchToolFromKeyboard(ToolId tool)
+{
+    ctx_.setCurrentTool(tool);
+    if (ctx_.notifyToolChangedFromKeyboard)
+        ctx_.notifyToolChangedFromKeyboard(tool);
 }
 
 void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool fineCents, bool resetToSung)
