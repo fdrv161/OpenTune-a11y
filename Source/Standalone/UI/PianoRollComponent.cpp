@@ -6199,6 +6199,14 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             a11y::announce(*this, text);
             return;
         }
+        case Event::EditFailed:
+            // Sighted users see the note stay put and, when the notes changed meanwhile,
+            // the selection highlight disappear; say both.
+            a11y::announce(*this, interactionState_.noteSelection.selectedIndices.empty()
+                                      ? LOC_RAW("Could not apply, selection cleared")
+                                      : LOC_RAW("Could not apply"),
+                           a11y::SpeechQueue::keepAll);
+            return;
     }
 }
 

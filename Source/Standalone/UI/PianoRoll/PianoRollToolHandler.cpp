@@ -953,8 +953,10 @@ void PianoRollToolHandler::resizeSelectedNoteByKeyboard(bool startEdge, int dire
     const bool committed = (contentSnapshot != nullptr && contentSnapshot->pitchCurve != nullptr && !f0Range.isEmpty())
                                ? commitNoteBasedCorrection(ctx_, plan.afterNotes, f0Range, commitResize)
                                : commitResize({}, {});
-    if (!committed)
+    if (!committed) {
+        notifyKeyboardNote(KeyboardNoteEvent::EditFailed, committedNotes(ctx_), -1);
         return;
+    }
     if (ctx_.invalidateLiveNotes) ctx_.invalidateLiveNotes(beforeNotes, committedNotes(ctx_));
     notifyKeyboardNote(KeyboardNoteEvent::NoteResized, committedNotes(ctx_), idx);
 }
@@ -1134,8 +1136,10 @@ void PianoRollToolHandler::splitSelectedNoteByKeyboard(bool atEditCursor)
     // The parts and their pitch centres come from the scissors planner, applied to the
     // selected note only (the scissors cut every note under the line).
     const auto plan = planScissorsSplit({ original }, splitTime, loadEffectiveF0(), f0tl);
-    if (plan.cutCount == 0 || plan.afterNotes.size() != 2)
+    if (plan.cutCount == 0 || plan.afterNotes.size() != 2) {
+        notifyKeyboardNote(KeyboardNoteEvent::EditFailed, beforeNotes, -1);
         return;
+    }
 
     std::vector<Note> newNotes;
     newNotes.reserve(beforeNotes.size() + 1);
@@ -1147,8 +1151,10 @@ void PianoRollToolHandler::splitSelectedNoteByKeyboard(bool atEditCursor)
     }
 
     // Same transaction as the scissors: revision check, notes replaced, one undo step.
-    if (!ctx_.commitScissorsNotes || !ctx_.commitScissorsNotes(newNotes, LOC_RAW("Split note")))
+    if (!ctx_.commitScissorsNotes || !ctx_.commitScissorsNotes(newNotes, LOC_RAW("Split note"))) {
+        notifyKeyboardNote(KeyboardNoteEvent::EditFailed, committedNotes(ctx_), -1);
         return;
+    }
 
     // Select the left part so Right arrow leads straight to the right part.
     ctx_.getState().noteSelection.setSingle(index, static_cast<int>(newNotes.size()));
@@ -1220,8 +1226,10 @@ void PianoRollToolHandler::mergeSelectedNoteWithNext()
     }
 
     // Same transaction as the scissors: revision check, notes replaced, one undo step.
-    if (!ctx_.commitScissorsNotes || !ctx_.commitScissorsNotes(newNotes, LOC_RAW("Merge notes")))
+    if (!ctx_.commitScissorsNotes || !ctx_.commitScissorsNotes(newNotes, LOC_RAW("Merge notes"))) {
+        notifyKeyboardNote(KeyboardNoteEvent::EditFailed, committedNotes(ctx_), -1);
         return;
+    }
 
     ctx_.getState().noteSelection.setSingle(mergedIndex, static_cast<int>(newNotes.size()));
     if (ctx_.invalidateSelectionFeedback)
@@ -1245,8 +1253,10 @@ bool PianoRollToolHandler::commitKeyboardNoteEdit(const std::vector<Note>& work,
     const F0FrameRange editRange = ctx_.getF0Timeline().rangeForTimes(rangeStart, rangeEnd);
     const auto contentSnapshot = ctx_.getEditableContentSnapshot();
     if (changedIndices.empty() || editRange.isEmpty()
-        || contentSnapshot == nullptr || contentSnapshot->pitchCurve == nullptr)
+        || contentSnapshot == nullptr || contentSnapshot->pitchCurve == nullptr) {
+        notifyKeyboardNote(KeyboardNoteEvent::EditFailed, committedNotes(ctx_), -1);
         return false;
+    }
 
     ctx_.beginNoteDraft();
     auto& draft = ctx_.getNoteDraft();
@@ -1255,8 +1265,11 @@ bool PianoRollToolHandler::commitKeyboardNoteEdit(const std::vector<Note>& work,
     ctx_.setUndoDescription(undoDescription);
     const bool committed = commitNoteBasedCorrection(ctx_, work, editRange);
     ctx_.clearNoteDraft();
-    if (!committed)
+    if (!committed) {
         ctx_.setUndoDescription({});
+        // Every caller is a keyboard edit, so the failure is said here once.
+        notifyKeyboardNote(KeyboardNoteEvent::EditFailed, committedNotes(ctx_), -1);
+    }
     return committed;
 }
 
@@ -1472,8 +1485,10 @@ void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool 
 
     const F0FrameRange editRange = ctx_.getF0Timeline().rangeForTimes(rangeStart, rangeEnd);
     const auto contentSnapshot = ctx_.getEditableContentSnapshot();
-    if (editRange.isEmpty() || contentSnapshot == nullptr || contentSnapshot->pitchCurve == nullptr)
+    if (editRange.isEmpty() || contentSnapshot == nullptr || contentSnapshot->pitchCurve == nullptr) {
+        notifyKeyboardNote(KeyboardNoteEvent::EditFailed, notes, -1);
         return;
+    }
 
     ctx_.beginNoteDraft();
     auto& draft = ctx_.getNoteDraft();
@@ -1484,6 +1499,7 @@ void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool 
     ctx_.clearNoteDraft();
     if (!committed) {
         ctx_.setUndoDescription({});
+        notifyKeyboardNote(KeyboardNoteEvent::EditFailed, committedNotes(ctx_), -1);
         return;
     }
 
@@ -1676,10 +1692,11 @@ void PianoRollToolHandler::handleDeleteKey()
 
     auto result = ctx_.deleteSelectedPianoRollNotes(
         selectedIndices, ctx_.getNotesRevision(), LOC_RAW("Delete note"));
-    if (result.status == SelectedNoteDeleteStatus::StaleRevision)
+    if (result.status != SelectedNoteDeleteStatus::Applied) {
+        // Delete also sits on Backspace and "1": a press that did nothing must be heard too.
+        notifyKeyboardNote(KeyboardNoteEvent::EditFailed, committedNotes(ctx_), -1);
         return;
-    if (result.status != SelectedNoteDeleteStatus::Applied)
-        return;
+    }
 
     if (result.pitchCurveEdited) {
         ctx_.notifyPitchCurveEdited(result.affectedRange.startFrame,
@@ -2989,6 +3006,11 @@ void PianoRollToolHandler::adjustSelectedNotesVolumeByKeyboard(int direction, bo
     const float step = static_cast<float>(direction) * (fine ? 0.1f : 1.0f);
     const auto result = ctx_.editVolumeEnvelopeRegions(selected, ctx_.getNotesRevision(), step,
                                                        LOC(kToolVolumeEnvelope));
+    if (result.status == VolumeEnvelopeRegionEditStatus::StaleRevision
+        || result.status == VolumeEnvelopeRegionEditStatus::Failed) {
+        notifyKeyboardNote(KeyboardNoteEvent::EditFailed, committedNotes(ctx_), -1);
+        return;
+    }
     // NoChange: at the limit; stay silent, as at list ends.
     if (result.status != VolumeEnvelopeRegionEditStatus::Applied)
         return;
@@ -3005,8 +3027,15 @@ void PianoRollToolHandler::resetSelectedNotesVolumeByKeyboard()
 
     // The double-click resets one note; the keyboard resets each selected note the same way.
     // A note already at 0 dB gives NoChange and nothing is committed, but the level is still said.
-    for (int index : selected)
-        ctx_.resetVolumeEnvelopeRegion(index, ctx_.getNotesRevision(), LOC(kToolVolumeEnvelope));
+    for (int index : selected) {
+        const auto result = ctx_.resetVolumeEnvelopeRegion(index, ctx_.getNotesRevision(), LOC(kToolVolumeEnvelope));
+        // After a failure the other indices may point at different notes: stop here.
+        if (result.status == VolumeEnvelopeRegionEditStatus::StaleRevision
+            || result.status == VolumeEnvelopeRegionEditStatus::Failed) {
+            notifyKeyboardNote(KeyboardNoteEvent::EditFailed, committedNotes(ctx_), -1);
+            return;
+        }
+    }
     notifyKeyboardNote(KeyboardNoteEvent::VolumeChanged, committedNotes(ctx_), selected.front());
 }
 

@@ -975,6 +975,7 @@ inline juce::String get(Language lang, const char* key)
         { "No pitch data, read the audio first", "No pitch data, read the audio first", "没有音高数据，请先读取音频", "ピッチデータがありません。先にオーディオを読み込んでください", "Нет данных о высоте, сначала прочитайте аудио", "Sin datos de tono, lea primero el audio" },
         { "Notes now: {0}", "Notes now: {0}", "现在音符数：{0}", "現在のノート数：{0}", "Теперь нот: {0}", "Notas ahora: {0}" },
         { "Could not apply", "Could not apply", "无法应用", "適用できませんでした", "Не удалось применить", "No se pudo aplicar" },
+        { "Could not apply, selection cleared", "Could not apply, selection cleared", "无法应用，已取消选择", "適用できませんでした。選択を解除しました", "Не удалось применить, выделение снято", "No se pudo aplicar, selección anulada" },
         { "Ctrl+Up/Down changes the pitch", "Ctrl+Up/Down changes the pitch", "Ctrl+上/下 改变音高", "Ctrl+上/下でピッチを変更", "Ctrl+Вверх/Вниз меняет высоту", "Ctrl+Arriba/Abajo cambia el tono" },
         { "Ctrl+Up/Down changes the modulation", "Ctrl+Up/Down changes the modulation", "Ctrl+上/下 改变调制", "Ctrl+上/下で変調を変更", "Ctrl+Вверх/Вниз меняет модуляцию", "Ctrl+Arriba/Abajo cambia la modulación" },
         { "Ctrl+Up/Down changes the drift", "Ctrl+Up/Down changes the drift", "Ctrl+上/下 改变漂移", "Ctrl+上/下でドリフトを変更", "Ctrl+Вверх/Вниз меняет дрейф", "Ctrl+Arriba/Abajo cambia la deriva" },
