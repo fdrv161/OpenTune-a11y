@@ -1913,8 +1913,10 @@ void EqPopupComponent::activateKeyRow()
         else
         {
             showRemoveConfirmation();
-            // NVDA reads the group name "Remove EQ?" and the focused button.
             confirmButton_.grabKeyboardFocus();
+            // NVDA says only "Confirm button" and skips the group name (user test), so the
+            // question is spoken as in the other dialogs; keepAll queues it after the focus speech.
+            a11y::announce(confirmButton_, LOC_RAW("Remove EQ?"), a11y::SpeechQueue::keepAll);
         }
         break;
     default:
