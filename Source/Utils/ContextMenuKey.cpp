@@ -16,6 +16,16 @@ bool isContextMenuKey(const juce::KeyPress& key)
         && mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown();
 }
 
+int firstSelectableItemId(const juce::PopupMenu& menu)
+{
+    for (juce::PopupMenu::MenuItemIterator it(menu); it.next();) {
+        const auto& item = it.getItem();
+        if (item.itemID != 0 && item.isEnabled && !item.isSeparator && !item.isSectionHeader)
+            return item.itemID;
+    }
+    return 0;
+}
+
 bool ApplicationsKeyWatcher::pressedNow()
 {
 #if JUCE_WINDOWS

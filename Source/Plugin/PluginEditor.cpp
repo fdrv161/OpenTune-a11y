@@ -20,6 +20,7 @@
 #include "Utils/TimeCoordinate.h"
 #include "UI/UiAssets.h"
 #include "Utils/ScreenReaderAnnouncer.h"
+#include "Utils/ContextMenuKey.h"
 
 #if JucePlugin_Enable_ARA
 #include "ARA/OpenTuneDocumentController.h"
@@ -198,9 +199,14 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
         auto menuNames = menuBar_.getMenuBarNames();
         auto menu = menuBar_.getMenuForIndex(menuIndex, menuIndex < menuNames.size() ? menuNames[menuIndex]
                                                                                     : juce::String());
-        menu.showMenuAsync(juce::PopupMenu::Options()
-                               .withTargetComponent(&button)
-                               .withParentComponent(&contentRoot_),
+        // Accessibility: open with the first item highlighted, so the first Enter works
+        // (user test: NVDA read "Options" on open, but Enter did nothing until an arrow key).
+        auto options = juce::PopupMenu::Options()
+                           .withTargetComponent(&button)
+                           .withParentComponent(&contentRoot_);
+        if (const int firstId = a11y::firstSelectableItemId(menu); firstId != 0)
+            options = options.withInitiallySelectedItem(firstId);
+        menu.showMenuAsync(options,
                            [safeEditor, safeButton, menuIndex](int result) {
                                if (safeEditor == nullptr)
                                    return;

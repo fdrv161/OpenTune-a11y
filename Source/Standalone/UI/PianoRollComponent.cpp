@@ -433,8 +433,18 @@ void PianoRollComponent::showToolMenuFromKeyboard()
         menu.addItem(std::move(item));
     }
 
+    // Open on the current tool, highlighted, so Enter works at once (without a highlight JUCE
+    // ignores the first Enter although NVDA already reads an item).
+    auto options = juce::PopupMenu::Options().withTargetComponent(this);
+    const bool currentListed = std::any_of(entries.begin(), entries.end(),
+                                           [this](const Entry& entry) { return entry.tool == currentTool_; });
+    if (currentListed)
+        options = options.withInitiallySelectedItem(static_cast<int>(currentTool_) + 1);
+    else if (const int firstId = a11y::firstSelectableItemId(menu); firstId != 0)
+        options = options.withInitiallySelectedItem(firstId);
+
     juce::Component::SafePointer<PianoRollComponent> safeThis(this);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
+    menu.showMenuAsync(options,
                        [safeThis](int result) {
                            if (safeThis == nullptr)
                                return;
