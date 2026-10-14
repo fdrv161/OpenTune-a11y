@@ -102,6 +102,7 @@ public:
         DriftChanged,       // arrows or Enter with the Pitch Drift tool
         Removed,            // Delete or Cut: index is the number of removed notes
         VolumeChanged,      // arrows or Enter with the Volume Envelope tool
+        ArrowHint,          // plain Up/Down: say that Ctrl+Up/Down edits (index unused)
         RangeSelected,      // Shift+Left/Right: index is the note at the moving end
         NoteResized,        // Ctrl(+Shift)+Left/Right: index is the resized note
         SingleNoteNeeded    // the action works on one selected note only
@@ -331,7 +332,8 @@ private:
     // §8.4: Delete key removes selected handle (non-endpoint).
     bool handleTimeToolDeleteSelected();
     bool handleNoteArrowKey(const juce::KeyPress& key);
-    void moveSelectedNotesPitchByKeyboard(int direction, bool fineCents = false, bool resetToSung = false);
+    void moveSelectedNotesPitchByKeyboard(int direction, bool fineCents = false, bool resetToSung = false,
+                                          bool semitoneIgnoringScale = false);
     void selectNoteFromKeyboard(const std::vector<Note>& notes, int index);
     void extendSelectionByKeyboard(bool moveRight);
     void resizeSelectedNoteByKeyboard(bool startEdge, int direction);
