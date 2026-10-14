@@ -831,10 +831,8 @@ bool PianoRollToolHandler::keyPressed(const juce::KeyPress& key,
         return true;
     }
 
-    if (matches(KeyShortcutConfig::ShortcutId::CancelSelection)) {
-        ctx_.notifyEscapeKey();
-        return true;
-    }
+    if (matches(KeyShortcutConfig::ShortcutId::CancelSelection))
+        return ctx_.notifyEscapeKey == nullptr || ctx_.notifyEscapeKey();
 
     return false;
 }
@@ -1466,6 +1464,15 @@ bool PianoRollToolHandler::applyNoteDefaultActionByKeyboard()
     const auto selected = collectSelectedNoteIndices(notes);
     if (selected.empty())
         return false;
+
+    // EQ: a click on a note opens the EQ window, so Enter does the same instead of snapping the pitch.
+    if (currentTool_ == ToolId::Eq) {
+        const int anchor = ctx_.getState().noteSelection.anchorIndex;
+        const bool anchorSelected = std::find(selected.begin(), selected.end(), anchor) != selected.end();
+        if (ctx_.openEqPreview)
+            ctx_.openEqPreview(anchorSelected ? anchor : selected.front());
+        return true;
+    }
 
     // Volume Envelope: the double-click resets the note to 0 dB.
     if (currentTool_ == ToolId::VolumeEnvelope) {

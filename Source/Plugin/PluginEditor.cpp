@@ -190,44 +190,46 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
     // via TransportBar icon buttons (File/Edit/View)
     menuBar_.setVisible(false);
 
-    transportBar_.onFileMenuRequested = [this]() {
+    // Accessibility: when a menu closes, Esc included, focus goes back to its button; it used
+    // to be lost and NVDA said nothing. A dialog opened from the menu takes focus after this.
+    const auto showTransportMenu = [this](int menuIndex, juce::Component& button) {
         const auto safeEditor = juce::Component::SafePointer<OpenTuneAudioProcessorEditor>(this);
+        const juce::Component::SafePointer<juce::Component> safeButton(&button);
         auto menuNames = menuBar_.getMenuBarNames();
-        auto menu = menuBar_.getMenuForIndex(0, menuNames.isEmpty() ? juce::String() : menuNames[0]);
+        auto menu = menuBar_.getMenuForIndex(menuIndex, menuIndex < menuNames.size() ? menuNames[menuIndex]
+                                                                                    : juce::String());
         menu.showMenuAsync(juce::PopupMenu::Options()
-                               .withTargetComponent(&transportBar_.getFileButton())
+                               .withTargetComponent(&button)
                                .withParentComponent(&contentRoot_),
-                           [safeEditor](int result) {
-                               if (result != 0 && safeEditor != nullptr)
-                                   safeEditor->menuBar_.menuItemSelected(result, 0);
+                           [safeEditor, safeButton, menuIndex](int result) {
+                               if (safeEditor == nullptr)
+                                   return;
+                               if (safeButton != nullptr && safeButton->isShowing())
+                                   safeButton->grabKeyboardFocus();
+                               if (result != 0)
+                                   safeEditor->menuBar_.menuItemSelected(result, menuIndex);
                            });
     };
 
-    transportBar_.onEditMenuRequested = [this]() {
-        const auto safeEditor = juce::Component::SafePointer<OpenTuneAudioProcessorEditor>(this);
-        auto menuNames = menuBar_.getMenuBarNames();
-        auto menu = menuBar_.getMenuForIndex(1, menuNames.size() > 1 ? menuNames[1] : juce::String());
-        menu.showMenuAsync(juce::PopupMenu::Options()
-                               .withTargetComponent(&transportBar_.getEditButton())
-                               .withParentComponent(&contentRoot_),
-                           [safeEditor](int result) {
-                               if (result != 0 && safeEditor != nullptr)
-                                   safeEditor->menuBar_.menuItemSelected(result, 1);
-                           });
+    transportBar_.onFileMenuRequested = [this, showTransportMenu]() {
+        showTransportMenu(0, transportBar_.getFileButton());
     };
 
-    transportBar_.onViewMenuRequested = [this]() {
-        const auto safeEditor = juce::Component::SafePointer<OpenTuneAudioProcessorEditor>(this);
-        auto menuNames = menuBar_.getMenuBarNames();
-        auto menu = menuBar_.getMenuForIndex(2, menuNames.size() > 2 ? menuNames[2] : juce::String());
-        menu.showMenuAsync(juce::PopupMenu::Options()
-                               .withTargetComponent(&transportBar_.getViewButton())
-                               .withParentComponent(&contentRoot_),
-                           [safeEditor](int result) {
-                               if (result != 0 && safeEditor != nullptr)
-                                   safeEditor->menuBar_.menuItemSelected(result, 2);
-                           });
+    transportBar_.onEditMenuRequested = [this, showTransportMenu]() {
+        showTransportMenu(1, transportBar_.getEditButton());
     };
+
+    transportBar_.onViewMenuRequested = [this, showTransportMenu]() {
+        showTransportMenu(2, transportBar_.getViewButton());
+    };
+
+    // Accessibility: the plugin has no track panel and cannot hide the parameter panel, so the
+    // Tracks and Props toggles do nothing here. They stay on screen as in the original, but leave
+    // the Tab order and the screen reader tree, where they read as working "pressed" buttons.
+    topBar_.setSidePanelTogglesAccessible(false);
+
+    // The plugin's piano roll has no use for Esc: REAPER gets it and closes the FX window.
+    pianoRoll_.setEscapePassesToHost(true);
 
     // content root 是 editor 的唯一直接子组件，承载全部主 UI（§7.3）。
     addAndMakeVisible(contentRoot_);
@@ -744,6 +746,17 @@ void OpenTuneAudioProcessorEditor::timerCallback()
         autoRenderOverlay_.setMessageText(LOC_RAW("Processing audio"));
         shouldShowOverlay = true;
     }
+
+    // Accessibility: sighted users see the "Rendering" badge go away. Say when a render that took
+    // a while is done, so it is clear playback now has the correction. Short renders stay silent
+    // so this does not talk over the note speech after every key press.
+    if (shouldShowBadge && !renderBadgeWasShown_) {
+        renderStartedMs_ = juce::Time::getMillisecondCounter();
+    } else if (!shouldShowBadge && renderBadgeWasShown_ && !shouldShowOverlay
+               && juce::Time::getMillisecondCounter() - renderStartedMs_ >= kRenderDoneSpeechMinMs) {
+        a11y::announce(pianoRoll_, LOC_RAW("Rendering done"), a11y::SpeechQueue::keepAll);
+    }
+    renderBadgeWasShown_ = shouldShowBadge;
 
     if (renderBadge_.isVisible() != shouldShowBadge)
         renderBadge_.setVisible(shouldShowBadge);

@@ -156,6 +156,8 @@ public:
     /** Access to a content's rendered (corrected) audio, for keyboard note audition. */
     using RenderCacheProvider = std::function<std::shared_ptr<const RenderCache>(ContentKey)>;
     void setRenderCacheProvider(RenderCacheProvider provider) { renderCacheProvider_ = std::move(provider); }
+    /** The plugin has no use for Esc in the piano roll: let the host have it. */
+    void setEscapePassesToHost(bool passes) noexcept { escapePassesToHost_ = passes; }
     std::unique_ptr<juce::AccessibilityHandler> createAccessibilityHandler() override;
 
     /** 注入 AppPreferences 指针（两个 Editor 构造/同步时直接注入，无中转层）。
@@ -704,7 +706,10 @@ private:
     juce::String modulationPercentText(const Note& note) const;
     juce::String driftPercentText(const Note& note) const;
     juce::String volumeText(const Note& note) const;
+    juce::String describeEditedSelection(const std::vector<Note>& notes, int index,
+                                         const std::function<juce::String(int)>& valueAt) const;
     void scheduleAuditionAfterRender(int noteIndex);
+    bool escapePassesToHost_ = false;
     void tickPendingAudition();
     RenderCacheProvider renderCacheProvider_;
     std::unique_ptr<juce::Timer> pendingAuditionTimer_;

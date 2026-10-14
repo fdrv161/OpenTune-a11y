@@ -201,7 +201,8 @@ public:
         std::function<void()> notifyAutoTuneRequested;
         std::function<void()> notifyPlayPauseToggle;
         std::function<void()> notifyStopPlayback;
-        std::function<void()> notifyEscapeKey;
+        // Returns false when Esc is not used here and should go on to the host.
+        std::function<bool()> notifyEscapeKey;
         std::function<void(size_t, float, float)> notifyNoteOffsetChanged;
         // notes is the current list (after a move it already holds the new pitch), index is a note or -1.
         std::function<void(KeyboardNoteEvent, const std::vector<Note>&, int)> notifyKeyboardNote;

@@ -212,7 +212,20 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
     toolCtx.notifyAutoTuneRequested = [this]() { listeners_.call([](Listener& l) { l.autoTuneRequested(); }); };
     toolCtx.notifyPlayPauseToggle = [this]() { listeners_.call([](Listener& l) { l.playPauseToggleRequested(); }); };
     toolCtx.notifyStopPlayback = [this]() { listeners_.call([](Listener& l) { l.stopPlaybackRequested(); }); };
-    toolCtx.notifyEscapeKey = [this]() { listeners_.call([](Listener& l) { l.escapeKeyPressed(); }); };
+    toolCtx.notifyEscapeKey = [this]() {
+        // Accessibility: an open EQ window closes first.
+        if (eqPopup_ != nullptr) {
+            closeEqPopup();
+            a11y::announce(*this, LOC_RAW("EQ closed"));
+            return true;
+        }
+        // In the plugin Esc has no job of its own; the host gets it, so it closes the FX
+        // window as in other plugins instead of the key being swallowed silently.
+        if (escapePassesToHost_)
+            return false;
+        listeners_.call([](Listener& l) { l.escapeKeyPressed(); });
+        return true;
+    };
     toolCtx.notifyNoteOffsetChanged = [this](size_t noteIndex, float oldOffset, float newOffset) {
         listeners_.call([noteIndex, oldOffset, newOffset](Listener& l) { l.noteOffsetChanged(noteIndex, oldOffset, newOffset); });
     };
@@ -1008,6 +1021,8 @@ void PianoRollComponent::openEqPopupForSelection(int primaryIndex)
         anchor = getNoteBounds(primary);
     eqPopup_->setBounds(placeEqPopupBounds(anchor));
     eqPopup_->toFront(false);
+    // Accessibility: the EQ window has no keyboard control yet; say so instead of staying silent.
+    a11y::announce(*this, LOC_RAW("EQ opened, mouse only. Escape closes it"));
 }
 
 void PianoRollComponent::closeEqPopup()
@@ -5840,6 +5855,40 @@ juce::String PianoRollComponent::volumeText(const Note& note) const
     return Loc::format(LOC_RAW("{0} dB"), value);
 }
 
+// With several notes selected an edit changes all of them, so name them all, in time order:
+// "Notes: 3, A4, B4, C5", or "Notes: 3, 50%" when the value is the same for each.
+juce::String PianoRollComponent::describeEditedSelection(const std::vector<Note>& notes, int index,
+                                                         const std::function<juce::String(int)>& valueAt) const
+{
+    const int count = static_cast<int>(notes.size());
+    std::vector<int> selected;
+    for (int i : interactionState_.noteSelection.selectedIndices)
+        if (i >= 0 && i < count)
+            selected.push_back(i);
+    if (selected.size() < 2)
+        return index >= 0 && index < count ? valueAt(index) : juce::String();
+
+    std::sort(selected.begin(), selected.end(), [&notes](int a, int b) {
+        return notes[static_cast<size_t>(a)].startTime < notes[static_cast<size_t>(b)].startTime;
+    });
+
+    juce::StringArray values;
+    for (int i : selected)
+        values.add(valueAt(i));
+    juce::StringArray distinct(values);
+    distinct.removeDuplicates(false);
+
+    // A long list is not worth hearing: the first few are enough to tell what happened.
+    constexpr int kMaxSpoken = 5;
+    if (distinct.size() == 1)
+        values = distinct;
+    else if (values.size() > kMaxSpoken)
+        values.removeRange(kMaxSpoken, values.size() - kMaxSpoken);
+
+    return Loc::format(LOC_RAW("Notes: {0}, {1}"), juce::String(static_cast<int>(selected.size())),
+                       values.joinIntoString(", "));
+}
+
 void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEvent event,
                                             const std::vector<Note>& notes, int index)
 {
@@ -5860,7 +5909,9 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             return;
         case Event::PitchMoved:
             // After a move only the new pitch matters; audio plays once the correction is re-rendered.
-            a11y::announce(*this, describeKeyboardNote(notes, index, NoteDetail::Target));
+            a11y::announce(*this, describeEditedSelection(notes, index, [this, &notes](int i) {
+                return describeKeyboardNote(notes, i, NoteDetail::Target);
+            }));
             scheduleAuditionAfterRender(index);
             return;
         case Event::Info:
@@ -5889,10 +5940,12 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
         case Event::ModulationChanged:
         case Event::DriftChanged:
             if (index >= 0 && index < static_cast<int>(notes.size())) {
-                const auto& note = notes[static_cast<size_t>(index)];
                 // Only the new value, like the drag tooltip: "40%", "+80%".
-                a11y::announce(*this, event == Event::ModulationChanged ? modulationPercentText(note)
-                                                                        : driftPercentText(note));
+                a11y::announce(*this, describeEditedSelection(notes, index, [this, &notes, event](int i) {
+                    const auto& note = notes[static_cast<size_t>(i)];
+                    return event == Event::ModulationChanged ? modulationPercentText(note)
+                                                             : driftPercentText(note);
+                }));
                 scheduleAuditionAfterRender(index);
             }
             return;
@@ -5926,7 +5979,9 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
         case Event::VolumeChanged:
             if (index >= 0 && index < static_cast<int>(notes.size())) {
                 // Only the new level, like the other value edits.
-                a11y::announce(*this, volumeText(notes[static_cast<size_t>(index)]));
+                a11y::announce(*this, describeEditedSelection(notes, index, [this, &notes](int i) {
+                    return volumeText(notes[static_cast<size_t>(i)]);
+                }));
                 scheduleAuditionAfterRender(index);
             }
             return;
