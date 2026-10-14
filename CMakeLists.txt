@@ -696,6 +696,15 @@ set(OPENTUNE_COMMON_SOURCES
         Source/Inference/INoteGenerator.h
         Source/Utils/PianoKeyAudition.cpp
         Source/Utils/PianoKeyAudition.h
+        Source/Utils/NoteAudition.cpp
+        Source/Utils/NoteAudition.h
+        Source/Utils/NoteSpeech.h
+        Source/Utils/ScreenReaderAnnouncer.cpp
+        Source/Utils/ScreenReaderAnnouncer.h
+        Source/Utils/AccessibleComboBox.h
+        Source/Utils/AccessibleKnob.h
+        Source/Utils/ContextMenuKey.cpp
+        Source/Utils/ContextMenuKey.h
         Source/Utils/AppLogger.cpp
         Source/Utils/AppLogger.h
         Source/Utils/EditorUiSync.h
@@ -1738,6 +1747,17 @@ if(OPENTUNE_BUILD_TESTS)
         target_compile_options(OpenTunePitchLaneVisualPolicyTests PRIVATE /utf-8 /EHsc)
     endif()
     add_test(NAME PitchLaneVisualPolicyTests COMMAND OpenTunePitchLaneVisualPolicyTests)
+
+    # Spoken note pitch text for screen readers - standard library only
+    add_executable(OpenTuneNoteSpeechTests
+        Tests/NoteSpeechTests.cpp
+    )
+    target_include_directories(OpenTuneNoteSpeechTests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+    if(MSVC)
+        target_compile_options(OpenTuneNoteSpeechTests PRIVATE /utf-8 /EHsc)
+    endif()
+    add_test(NAME NoteSpeechTests COMMAND OpenTuneNoteSpeechTests)
 
     # Arrangement composite cache keeps independent per-tile, per-layer generations.
     add_executable(OpenTuneTimelineCompositeCacheTests

@@ -1918,6 +1918,7 @@ void OpenTuneAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         if (processBlockForARA(buffer, isRealtime(), araPositionInfo))
         {
             pianoKeyAudition_.mixIntoBuffer(buffer, numSamples, static_cast<double>(getSampleRate()));
+            noteAudition_.mixIntoBuffer(buffer, numSamples, static_cast<double>(getSampleRate()));
             outputSpectrumAnalyzer_.push(buffer);
             return;
         }
@@ -1943,6 +1944,7 @@ void OpenTuneAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
         captureSession->processBlock(buffer, hostAbsoluteSample, getSampleRate(), isPlaying);
         pianoKeyAudition_.mixIntoBuffer(buffer, numSamples, static_cast<double>(getSampleRate()));
+        noteAudition_.mixIntoBuffer(buffer, numSamples, static_cast<double>(getSampleRate()));
         outputSpectrumAnalyzer_.push(buffer);
         return;
     }
@@ -1953,6 +1955,7 @@ void OpenTuneAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         buffer.clear(i, 0, numSamples);
     }
     pianoKeyAudition_.mixIntoBuffer(buffer, numSamples, static_cast<double>(getSampleRate()));
+    noteAudition_.mixIntoBuffer(buffer, numSamples, static_cast<double>(getSampleRate()));
     outputSpectrumAnalyzer_.push(buffer);
 #elif JucePlugin_Build_Standalone
     // --- Standalone state machine ---
@@ -2137,6 +2140,7 @@ void OpenTuneAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // Stopped/Paused with no active transition — only piano audition
     if (phase_ != RuntimePhase::Playing && !transitionActive_) {
         pianoKeyAudition_.mixIntoBuffer(buffer, numSamples, deviceSampleRate);
+        noteAudition_.mixIntoBuffer(buffer, numSamples, deviceSampleRate);
         outputSpectrumAnalyzer_.push(buffer);
         jassert(standaloneArrangement_ != nullptr);
         for (int trackId = 0; trackId < MAX_TRACKS; ++trackId) {
@@ -2329,6 +2333,7 @@ void OpenTuneAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     }
 
     pianoKeyAudition_.mixIntoBuffer(buffer, numSamples, deviceSampleRate);
+    noteAudition_.mixIntoBuffer(buffer, numSamples, deviceSampleRate);
 
     // Standalone 频谱分析：接收最终输出（含 pianoKeyAudition 混音）
     outputSpectrumAnalyzer_.push(buffer);

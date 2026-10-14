@@ -51,6 +51,7 @@
 #include "Utils/UndoManager.h"
 #include "Utils/VocoderModelWeight.h"
 #include "Utils/PianoKeyAudition.h"
+#include "Utils/NoteAudition.h"
 #include "Utils/AppPreferences.h"
 #include "Utils/PlayHeadState.h"
 #include "Utils/TrackConstants.h"
@@ -1011,10 +1012,19 @@ public:
 
     UndoManager& getUndoManager() { return undoManager_; }
     PianoKeyAudition& getPianoKeyAudition() { return pianoKeyAudition_; }
+    NoteAudition& getNoteAudition() { return noteAudition_; }
+    // Rendered (corrected) audio of a content. In ARA it is owned by the DocumentController,
+    // not by this plugin instance, so resolve it through the shared service lookup.
+    std::shared_ptr<const RenderCache> getReadableRenderCache(ContentKey key) const
+    {
+        const auto* renderService = resolveReadableContentRenderService(key);
+        return renderService != nullptr ? renderService->getRenderCache(key) : nullptr;
+    }
 
 private:
     UndoManager undoManager_;
     PianoKeyAudition pianoKeyAudition_;
+    NoteAudition noteAudition_;
     OutputSpectrumAnalyzer outputSpectrumAnalyzer_;
 
     // Hard-cut render mutation request primitive. This is the only path

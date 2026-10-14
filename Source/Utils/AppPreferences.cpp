@@ -37,12 +37,14 @@ constexpr const char* kSharedTimelineDisplayModeKey = "shared.timeline.displayMo
 constexpr const char* kSharedTuningHzKey = "shared.tuning.hz";
 constexpr const char* kSharedGridStyleKey = "shared.pianoRoll.gridStyle";
 constexpr const char* kSharedWholeNoteMoveSnapModeKey = "shared.pianoRoll.wholeNoteMoveSnapMode";
+constexpr const char* kSharedAuditionAfterKeyboardEditKey = "shared.pianoRoll.auditionAfterKeyboardEdit";
 constexpr const char* kSharedPitchLaneVisualModeKey = "shared.pianoRoll.pitchLaneVisualMode";
 constexpr const char* kSharedEqSuppressRemoveConfirmationKey = "shared.eq.suppressRemoveConfirmation";
 constexpr const char* kSharedOnboardingShownKey = "shared.onboardingShown";
 constexpr const char* kPluginEditorSizeKey = "defaultSize";
 constexpr const char* kShortcutSchemaVersionKey = "shared.shortcuts.schemaVersion";
-constexpr int kShortcutSchemaVersion = 1;
+// 2: Pitch Modulation / Pitch Drift got default keys F3 / F5 (Windows).
+constexpr int kShortcutSchemaVersion = 2;
 
 juce::File resolveSettingsDirectory(const AppPreferences::StorageOptions& storageOptions)
 {
@@ -278,8 +280,12 @@ TrackColorMode trackColorModeFromToken(const juce::String& token)
 KeyShortcutConfig::KeyShortcutSettings decodeShortcutSettings(const juce::PropertiesFile& properties)
 {
     auto settings = KeyShortcutConfig::KeyShortcutSettings::getDefault();
-    const bool migrateMouseDefaults = properties.getIntValue(kShortcutSchemaVersionKey, 0)
-        < kShortcutSchemaVersion;
+    const int storedSchemaVersion = properties.getIntValue(kShortcutSchemaVersionKey, 0);
+    // Schema 1 added mouse bindings; do not merge them in again.
+    const bool migrateMouseDefaults = storedSchemaVersion < 1;
+    // Schema 2: modulation and drift used to have no keys, so settings stored
+    // an empty string. Do not treat it as a user choice; adopt the new F3 / F5.
+    const bool adoptNewToolDefaults = storedSchemaVersion < 2;
 
     for (const auto& info : KeyShortcutConfig::kShortcutInfos) {
         if (!properties.containsKey(info.storageKey))
@@ -287,7 +293,11 @@ KeyShortcutConfig::KeyShortcutSettings decodeShortcutSettings(const juce::Proper
 
         const auto stored = properties.getValue(info.storageKey, {});
         if (stored.isEmpty()) {
-            settings.bindings[static_cast<size_t>(info.id)].bindings.clear();
+            const bool keepNewDefault = adoptNewToolDefaults
+                && (info.id == KeyShortcutConfig::ShortcutId::ToolODPitchModulation
+                    || info.id == KeyShortcutConfig::ShortcutId::ToolODPitchDrift);
+            if (!keepNewDefault)
+                settings.bindings[static_cast<size_t>(info.id)].bindings.clear();
             continue;
         }
 
@@ -396,6 +406,9 @@ AppPreferencesState loadStateFromProperties(const juce::PropertiesFile& properti
         kSharedEqSuppressRemoveConfirmationKey,
         state.shared.suppressEqRemoveConfirmation);
     state.shared.onboardingShown = properties.getBoolValue(kSharedOnboardingShownKey, state.shared.onboardingShown);
+    state.shared.auditionAfterKeyboardEdit = properties.getBoolValue(
+        kSharedAuditionAfterKeyboardEditKey,
+        state.shared.auditionAfterKeyboardEdit);
     state.shared.experimentalReferenceAlignMode = fromExperimentalRefAlignModeToken(
         properties.getValue(kSharedExperimentalReferenceAlignKey,
                             toExperimentalRefAlignModeToken(state.shared.experimentalReferenceAlignMode)));
@@ -454,6 +467,7 @@ void writeStateToProperties(juce::PropertiesFile& properties, const AppPreferenc
     properties.setValue(kSharedTuningHzKey, static_cast<double>(state.shared.tuning.tuningHz));
     properties.setValue(kSharedGridStyleKey, static_cast<int>(state.shared.gridStyle));
     properties.setValue(kSharedWholeNoteMoveSnapModeKey, static_cast<int>(state.shared.wholeNoteMoveSnapMode));
+    properties.setValue(kSharedAuditionAfterKeyboardEditKey, state.shared.auditionAfterKeyboardEdit);
     properties.setValue(kSharedRenderingPriorityKey,
                         toRenderingPriorityToken(state.shared.renderingPriority));
     properties.setValue(kSharedVocoderWeightKey,
@@ -831,6 +845,19 @@ WholeNoteMoveSnapMode AppPreferences::getWholeNoteMoveSnapMode() const
 {
     const std::lock_guard<std::mutex> lock(mutex_);
     return state_.shared.wholeNoteMoveSnapMode;
+}
+
+void AppPreferences::setAuditionAfterKeyboardEdit(bool enabled)
+{
+    const std::lock_guard<std::mutex> lock(mutex_);
+    state_.shared.auditionAfterKeyboardEdit = enabled;
+    saveLocked();
+}
+
+bool AppPreferences::getAuditionAfterKeyboardEdit() const
+{
+    const std::lock_guard<std::mutex> lock(mutex_);
+    return state_.shared.auditionAfterKeyboardEdit;
 }
 
 PluginEditorSize AppPreferences::getDefaultPluginEditorSize()
