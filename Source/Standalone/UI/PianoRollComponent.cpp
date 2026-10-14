@@ -6113,6 +6113,19 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             if (index >= 0 && index < static_cast<int>(notes.size()))
                 auditionNote(notes[static_cast<size_t>(index)]);
             return;
+        case Event::ArrowHint:
+        {
+            // Says what Ctrl+Up/Down edits with the current tool.
+            juce::String hint = LOC_RAW("Ctrl+Up/Down changes the pitch");
+            if (currentTool_ == ToolId::PitchModulation)
+                hint = LOC_RAW("Ctrl+Up/Down changes the modulation");
+            else if (currentTool_ == ToolId::PitchDrift)
+                hint = LOC_RAW("Ctrl+Up/Down changes the drift");
+            else if (currentTool_ == ToolId::VolumeEnvelope)
+                hint = LOC_RAW("Ctrl+Up/Down changes the volume");
+            a11y::announce(*this, hint);
+            return;
+        }
         case Event::VolumeChanged:
             if (index >= 0 && index < static_cast<int>(notes.size())) {
                 // Only the new level, like the other value edits.

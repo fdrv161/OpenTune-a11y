@@ -715,8 +715,11 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     const int keyCode = key.getKeyCode();
     const bool plain = !mods.isAnyModifierKeyDown();
     const bool shiftOnly = mods.isShiftDown() && !mods.isCtrlDown() && !mods.isAltDown() && !mods.isCommandDown();
-    // Alt = fine step, as Alt while dragging a note turns the pitch grid off (dragNotePitch).
     const bool altOnly = mods.isAltDown() && !mods.isShiftDown() && !mods.isCtrlDown() && !mods.isCommandDown();
+    // Values change with Ctrl+Up/Down (as in Melodyne), Ctrl+Shift for a fine step, so a plain
+    // arrow pressed while exploring changes nothing. Ctrl+Alt+Up/Down stays the vertical zoom.
+    const bool ctrlOnly = (mods.isCtrlDown() || mods.isCommandDown()) && !mods.isShiftDown() && !mods.isAltDown();
+    const bool ctrlShift = (mods.isCtrlDown() || mods.isCommandDown()) && mods.isShiftDown() && !mods.isAltDown();
     const bool upOrDown = keyCode == juce::KeyPress::upKey || keyCode == juce::KeyPress::downKey;
     const bool isInfoKey = keyCode == 'I' || keyCode == 'i';
     const bool isResetKey = keyCode == 'R' || keyCode == 'r';
@@ -731,12 +734,12 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     if (plain && keyCode == juce::KeyPress::returnKey && openDyne)
         return applyNoteDefaultActionByKeyboard();
 
-    // Extra mouse-free keys (Alt+Up/Down, Home, End, I, R, X, J) do not override a binding
+    // Extra mouse-free keys (Ctrl/Alt+Up/Down, Home, End, I, R, X, J) do not override a binding
     // the user assigned to something else in the shortcut settings.
     const bool leftOrRight = keyCode == juce::KeyPress::leftKey || keyCode == juce::KeyPress::rightKey;
     // Ctrl+Left/Right move the end of the note, Ctrl+Shift+Left/Right its start.
     const bool resizeKey = leftOrRight && mods.isCtrlDown() && !mods.isAltDown();
-    const bool extraKey = (altOnly && upOrDown) || (shiftOnly && leftOrRight) || resizeKey
+    const bool extraKey = ((altOnly || ctrlOnly || ctrlShift) && upOrDown) || (shiftOnly && leftOrRight) || resizeKey
         || (plain && (isInfoKey || isResetKey || isSplitKey || isMergeKey || isHomeOrEnd));
     if (extraKey
         && KeyShortcutConfig::findShortcutForBinding(ctx_.getShortcutSettings(),
@@ -744,17 +747,26 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
                != KeyShortcutConfig::ShortcutId::Count)
         return false;
 
-    if (upOrDown && (plain || altOnly)) {
+    if (upOrDown && (plain || altOnly || ctrlOnly || ctrlShift)) {
         const int direction = keyCode == juce::KeyPress::upKey ? 1 : -1;
+        const bool modDrift = openDyne && (currentTool_ == ToolId::PitchModulation || currentTool_ == ToolId::PitchDrift);
+        const bool volume = openDyne && currentTool_ == ToolId::VolumeEnvelope;
+        // A plain arrow, or Alt where there are no semitones, only says which keys edit.
+        if (plain || (altOnly && (modDrift || volume))) {
+            notifyKeyboardNote(KeyboardNoteEvent::ArrowHint, committedNotes(ctx_), -1);
+            return true;
+        }
         // Like mouse dragging: the arrows change whatever the current tool edits.
-        if (openDyne && (currentTool_ == ToolId::PitchModulation || currentTool_ == ToolId::PitchDrift))
-            adjustSelectedNotesModDriftByKeyboard(direction, altOnly);
-        else if (openDyne && currentTool_ == ToolId::VolumeEnvelope)
-            // 1 dB per press, Alt 0.1 dB.
-            adjustSelectedNotesVolumeByKeyboard(direction, altOnly);
+        if (modDrift)
+            adjustSelectedNotesModDriftByKeyboard(direction, ctrlShift);   // 5%, fine 1%
+        else if (volume)
+            adjustSelectedNotesVolumeByKeyboard(direction, ctrlShift);     // 1 dB, fine 0.1 dB
+        else if (altOnly)
+            // Alt: a semitone even when the key/scale grid would skip notes outside the scale.
+            moveSelectedNotesPitchByKeyboard(direction, false, false, true);
         else
-            // Alt: 1 cent without the pitch grid.
-            moveSelectedNotesPitchByKeyboard(direction, altOnly);
+            // Ctrl: next step of the pitch grid; Ctrl+Shift: 1 cent without the grid.
+            moveSelectedNotesPitchByKeyboard(direction, ctrlShift);
         return true;
     }
     if (resizeKey) {
@@ -1333,7 +1345,8 @@ void PianoRollToolHandler::switchToolFromKeyboard(ToolId tool)
         ctx_.notifyToolChangedFromKeyboard(tool);
 }
 
-void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool fineCents, bool resetToSung)
+void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool fineCents, bool resetToSung,
+                                                             bool semitoneIgnoringScale)
 {
     const auto& notes = committedNotes(ctx_);
     const auto selectedIndices = collectSelectedNoteIndices(notes);
@@ -1369,7 +1382,14 @@ void PianoRollToolHandler::moveSelectedNotesPitchByKeyboard(int direction, bool 
             // originalPitch is the sung pitch; notes without it have nothing to return to.
             if (note.originalPitch > 0.0f)
                 targetMidi = PitchUtils::freqToMidi(note.originalPitch);
-        } else if (noSnap || fineCents) {
+        } else if (fineCents) {
+            targetMidi += static_cast<float>(direction) * 0.01f;
+        } else if (semitoneIgnoringScale) {
+            // To the next whole semitone, whatever the grid mode.
+            targetMidi = direction > 0
+                ? std::floor(currentMidi) + 1.0f
+                : std::ceil(currentMidi) - 1.0f;
+        } else if (noSnap) {
             targetMidi += static_cast<float>(direction) * 0.01f;
         } else if (scaleSnapEnabled) {
             const float firstCandidate = direction > 0
