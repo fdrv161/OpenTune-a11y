@@ -79,16 +79,27 @@ public:
         }
 
         // Accessibility: tab buttons do not take focus by default, so Tab skipped them.
+        // Only the current tab is a Tab stop; arrows move between tabs (see keyPressed).
         auto& tabBar = tabbedComponent_.getTabbedButtonBar();
-        for (int i = 0; i < tabBar.getNumTabs(); ++i)
-            if (auto* tabButton = tabBar.getTabButton(i))
-                tabButton->setWantsKeyboardFocus(true);
+        updateTabStops();
         // The tab bar acted as a keyboard focus container: Tab cycled through the tab buttons
         // only and never reached the page or the Close button.
         tabBar.setFocusContainerType(juce::Component::FocusContainerType::none);
         tabbedComponent_.setFocusContainerType(juce::Component::FocusContainerType::none);
+        // On a tab change JUCE moves focus into the new page (toFront(true)), and the tab name
+        // announced after that cut off NVDA reading the page's first control, so it sounded as
+        // if focus stayed on the tab (user test). Keep focus on the tab button instead, as in
+        // Windows tab dialogs: its focus speech names the tab, and Tab goes on into the page.
         tabbedComponent_.onTabChanged = [this](const juce::String& name) {
-            a11y::announce(*this, name);
+            updateTabStops();
+            auto& bar = tabbedComponent_.getTabbedButtonBar();
+            auto* tabButton = bar.getTabButton(bar.getCurrentTabIndex());
+            if (tabButton == nullptr || !tabButton->isShowing())
+                return;
+            if (tabButton->hasKeyboardFocus(false))
+                a11y::announce(*this, name);   // focus did not move: no focus speech to rely on
+            else
+                tabButton->grabKeyboardFocus();
         };
 
         // Sliders on the pages: Tab lands in the value box editor, which has no name.
@@ -161,6 +172,27 @@ public:
                 return true;
             }
         }
+        // On a tab button: Left/Right go to the previous / next tab, Home/End to the first /
+        // last one. No wrap-around: at the ends nothing happens, as in other lists.
+        if (!mods.isAnyModifierKeyDown()) {
+            auto& bar = tabbedComponent_.getTabbedButtonBar();
+            auto* focused = juce::Component::getCurrentlyFocusedComponent();
+            const int keyCode = key.getKeyCode();
+            if (focused != nullptr && bar.isParentOf(focused)
+                && (keyCode == juce::KeyPress::leftKey || keyCode == juce::KeyPress::rightKey
+                    || keyCode == juce::KeyPress::homeKey || keyCode == juce::KeyPress::endKey)) {
+                const int count = tabbedComponent_.getNumTabs();
+                const int current = tabbedComponent_.getCurrentTabIndex();
+                int target = current;
+                if (keyCode == juce::KeyPress::leftKey)       target = current - 1;
+                else if (keyCode == juce::KeyPress::rightKey) target = current + 1;
+                else if (keyCode == juce::KeyPress::homeKey)  target = 0;
+                else                                          target = count - 1;
+                if (target >= 0 && target < count && target != current)
+                    tabbedComponent_.setCurrentTabIndex(target);
+                return true;
+            }
+        }
         if (key.getKeyCode() == juce::KeyPress::tabKey && mods.isCtrlDown() && !mods.isAltDown()) {
             const int count = tabbedComponent_.getNumTabs();
             if (count > 0) {
@@ -173,7 +205,16 @@ public:
     }
 
 private:
-    // Announce the opened tab's name; otherwise pressing Enter on a tab button is silent.
+    // Only the current tab button takes Tab focus, so Tab goes from it straight into the page.
+    void updateTabStops()
+    {
+        auto& bar = tabbedComponent_.getTabbedButtonBar();
+        for (int i = 0; i < bar.getNumTabs(); ++i)
+            if (auto* tabButton = bar.getTabButton(i))
+                tabButton->setWantsKeyboardFocus(i == bar.getCurrentTabIndex());
+    }
+
+    // Reports tab changes made by the user, for the focus handling above.
     class AnnouncingTabs final : public juce::TabbedComponent
     {
     public:
