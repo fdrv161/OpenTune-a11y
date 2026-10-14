@@ -247,7 +247,9 @@ public:
     bool getSingleSelectedNoteParameters(float& retuneSpeedPercent, float& vibratoDepth, float& vibratoRate) const;
 
     AudioEditingScheme::ParameterEditResult editParameter(AudioEditingScheme::ParameterId id, float value);
-    // Accessibility: REAPER's edit cursor in source seconds while stopped, if known.
+    // Accessibility: REAPER's edit cursor while stopped, if known: project seconds and
+    // the clip's source seconds. Right after a stop it is the stop position (see the .cpp).
+    std::optional<double> stoppedEditCursorTimeline() const;
     std::optional<double> stoppedEditCursorSourceTime() const;
     // Accessibility: what a parameter knob change did, for speech ("Applied to notes: 3").
     juce::String describeParameterEdit(AudioEditingScheme::ParameterId id,
@@ -639,6 +641,10 @@ private:
     ReadContentSnapshotFn readContentSnapshot_;
     std::shared_ptr<ContentEditCommands> contentCommands_;
     OpenTuneAudioProcessor* processor_ = nullptr;
+    // Accessibility: where playback last stopped and REAPER's edit cursor at that moment.
+    bool stopPositionValid_ = false;
+    double stopPositionSeconds_ = 0.0;
+    std::optional<double> editCursorAtStop_;
 
     std::shared_ptr<const EditableContentSnapshot> readSnapshotFor(ContentKey key) const {
         return readContentSnapshot_ ? readContentSnapshot_(key) : nullptr;
