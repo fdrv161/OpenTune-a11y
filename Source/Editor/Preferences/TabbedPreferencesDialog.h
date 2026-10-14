@@ -172,20 +172,23 @@ public:
                 return true;
             }
         }
-        // On a tab button: Left/Right go to the previous / next tab, Home/End to the first /
+        // On a tab button: Up/Left go to the previous tab, Down/Right to the next one (Up/Down
+        // as in REAPER's preferences tree, which the user expects), Home/End to the first /
         // last one. No wrap-around: at the ends nothing happens, as in other lists.
         if (!mods.isAnyModifierKeyDown()) {
             auto& bar = tabbedComponent_.getTabbedButtonBar();
             auto* focused = juce::Component::getCurrentlyFocusedComponent();
             const int keyCode = key.getKeyCode();
+            const bool previousKey = keyCode == juce::KeyPress::upKey || keyCode == juce::KeyPress::leftKey;
+            const bool nextKey = keyCode == juce::KeyPress::downKey || keyCode == juce::KeyPress::rightKey;
             if (focused != nullptr && bar.isParentOf(focused)
-                && (keyCode == juce::KeyPress::leftKey || keyCode == juce::KeyPress::rightKey
+                && (previousKey || nextKey
                     || keyCode == juce::KeyPress::homeKey || keyCode == juce::KeyPress::endKey)) {
                 const int count = tabbedComponent_.getNumTabs();
                 const int current = tabbedComponent_.getCurrentTabIndex();
                 int target = current;
-                if (keyCode == juce::KeyPress::leftKey)       target = current - 1;
-                else if (keyCode == juce::KeyPress::rightKey) target = current + 1;
+                if (previousKey)                              target = current - 1;
+                else if (nextKey)                             target = current + 1;
                 else if (keyCode == juce::KeyPress::homeKey)  target = 0;
                 else                                          target = count - 1;
                 if (target >= 0 && target < count && target != current)
