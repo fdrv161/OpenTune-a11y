@@ -948,6 +948,7 @@ inline juce::String get(Language lang, const char* key)
         { "Redone: {0}", "Redone: {0}", "已重做：{0}", "やり直しました：{0}", "Повторено: {0}", "Rehecho: {0}" },
         { "Nothing to undo", "Nothing to undo", "没有可撤销的操作", "元に戻す操作はありません", "Нечего отменять", "Nada que deshacer" },
         { "Nothing to redo", "Nothing to redo", "没有可重做的操作", "やり直す操作はありません", "Нечего повторять", "Nada que rehacer" },
+        { "Copied to clipboard", "Copied to clipboard", "已复制到剪贴板", "クリップボードにコピーしました", "Скопировано в буфер обмена", "Copiado al portapapeles" },
         { "Time tool", "Time tool", "时间工具", "タイムツール", "Инструмент времени", "Herramienta de tiempo" },
         { "All notes selected: {0}", "All notes selected: {0}", "已选择全部音符：{0}", "すべてのノートを選択：{0}", "Выделены все ноты: {0}", "Todas las notas seleccionadas: {0}" },
         { "No adjacent next note","No adjacent next note", "没有紧邻的下一个音符", "隣接する次のノートがありません", "Нет следующей ноты вплотную", "No hay una nota siguiente contigua" },
