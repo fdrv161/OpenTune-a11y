@@ -30,6 +30,7 @@
 #include "Utils/NoteGeneratorTypes.h"
 #include "Utils/PitchControlConfig.h"
 #include "Utils/KeyShortcutConfig.h"
+#include "Utils/ContextMenuKey.h"
 #include "Utils/ZoomSensitivityConfig.h"
 #include <cmath>
 #include <memory>
@@ -427,6 +428,7 @@ private:
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 public:
     bool keyPressed(const juce::KeyPress& key) override;
+    bool keyStateChanged(bool isKeyDown) override;
 
     /// Re-read notes from the content store and update the cache.
     void refreshEditedContentNotes();
@@ -577,6 +579,8 @@ private:
     // OpenDyne 右键工具选择弹出条
     std::unique_ptr<juce::Component> toolSelectionBar_;
     void showToolSelectionBar(juce::Point<int> screenPos);
+    void showToolMenuFromKeyboard();
+    a11y::ApplicationsKeyWatcher applicationsKey_;
     void dismissToolPopup();
 
     InteractionState interactionState_;

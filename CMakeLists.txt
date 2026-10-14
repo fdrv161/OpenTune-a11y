@@ -700,6 +700,8 @@ set(OPENTUNE_COMMON_SOURCES
         Source/Utils/ScreenReaderAnnouncer.cpp
         Source/Utils/ScreenReaderAnnouncer.h
         Source/Utils/AccessibleComboBox.h
+        Source/Utils/ContextMenuKey.cpp
+        Source/Utils/ContextMenuKey.h
         Source/Utils/AppLogger.cpp
         Source/Utils/AppLogger.h
         Source/Utils/EditorUiSync.h

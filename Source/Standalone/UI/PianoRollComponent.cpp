@@ -364,6 +364,77 @@ juce::Path makeToolIcon(ToolId id) {
 
 } // namespace
 
+bool PianoRollComponent::keyStateChanged(bool isKeyDown)
+{
+    // The Applications (menu) key never reaches keyPressed in JUCE.
+    if (applicationsKey_.pressedNow() && isKeyDown) {
+        showToolMenuFromKeyboard();
+        return true;
+    }
+    return juce::Component::keyStateChanged(isKeyDown);
+}
+
+// Keyboard twin of the right-click tool bar (showToolSelectionBar): a standard PopupMenu,
+// which JUCE makes navigable with arrows and readable by screen readers. The tool list
+// follows showToolSelectionBar; keep both in sync.
+void PianoRollComponent::showToolMenuFromKeyboard()
+{
+    using Id = KeyShortcutConfig::ShortcutId;
+    struct Entry { ToolId tool; juce::String name; Id shortcut; };
+    std::vector<Entry> entries;
+    if (isOpenDyne()) {
+        entries = {
+            { ToolId::Select, LOC(kToolODSelect), Id::ToolODSelect },
+            { ToolId::Pitch, LOC(kToolODPitch), Id::ToolODPitch },
+            { ToolId::PitchModulation, LOC(kToolODPitchModulation), Id::ToolODPitchModulation },
+            { ToolId::PitchDrift, LOC(kToolODPitchDrift), Id::ToolODPitchDrift },
+            { ToolId::HandDraw, LOC(kToolHandDraw), Id::ToolHandDraw },
+            { ToolId::Eraser, LOC(kEraser), Id::Count },
+            { ToolId::VolumeEnvelope, LOC(kToolODVolumeEnvelope), Id::ToolODVolumeEnvelope },
+        };
+        if (experimentalFeaturesEnabled_)
+            entries.push_back({ ToolId::TimeTool, LOC(kTime), Id::ToolTimeTool });
+        entries.push_back({ ToolId::Scissors, LOC(kToolODScissors), Id::ToolODScissors });
+        entries.push_back({ ToolId::Eq, LOC(kToolEq), Id::Eq });
+    } else {
+        entries = {
+            { ToolId::Select, LOC(kToolSelect), Id::ToolSelect },
+            { ToolId::DrawNote, LOC(kToolDrawNote), Id::ToolDrawNote },
+            { ToolId::LineAnchor, LOC(kToolLineAnchor), Id::ToolLineAnchor },
+            { ToolId::HandDraw, LOC(kToolHandDraw), Id::ToolHandDraw },
+            { ToolId::Eraser, LOC(kEraser), Id::Count },
+        };
+        if (experimentalFeaturesEnabled_)
+            entries.push_back({ ToolId::TimeTool, LOC(kTime), Id::ToolTimeTool });
+    }
+
+    juce::PopupMenu menu;
+    for (const auto& entry : entries) {
+        juce::PopupMenu::Item item(entry.name);
+        item.itemID = static_cast<int>(entry.tool) + 1;   // 0 means "cancelled"
+        item.isTicked = currentTool_ == entry.tool;
+        // The real binding, so a user's own shortcut is shown, not the default.
+        if (entry.shortcut != Id::Count)
+            item.shortcutKeyDescription = KeyShortcutConfig::getShortcutBinding(shortcutSettings_, entry.shortcut)
+                                              .getDisplayNames();
+        menu.addItem(std::move(item));
+    }
+
+    juce::Component::SafePointer<PianoRollComponent> safeThis(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
+                       [safeThis](int result) {
+                           if (safeThis == nullptr)
+                               return;
+                           // Bring focus back to the notes whether a tool was chosen or Esc pressed.
+                           safeThis->grabKeyboardFocus();
+                           if (result > 0) {
+                               const auto tool = static_cast<ToolId>(result - 1);
+                               safeThis->setCurrentTool(tool);
+                               a11y::announce(*safeThis, safeThis->keyboardToolName(tool));
+                           }
+                       });
+}
+
 void PianoRollComponent::showToolSelectionBar(juce::Point<int> screenPos)
 {
     dismissToolPopup();
@@ -5032,6 +5103,12 @@ bool PianoRollComponent::handlePointerShortcut(const KeyShortcutConfig::KeyBindi
 }
 
 bool PianoRollComponent::keyPressed(const juce::KeyPress& key) {
+    // Shift+F10 opens what the right-click opens: the tool menu.
+    if (a11y::isContextMenuKey(key)) {
+        showToolMenuFromKeyboard();
+        return true;
+    }
+
     if (handleViewportShortcut(key))
         return true;
 
