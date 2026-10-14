@@ -5155,7 +5155,10 @@ void PianoRollComponent::pasteNotes()
     //   → PianoRollTimeMap::timelineToSource()
     //   → source seconds
     double pasteStartTime = 0.0;
-    const double playheadTime = playHeadState_.getPresentedPositionSeconds();
+    // Accessibility: with REAPER stopped the plugin's playhead is where playback last
+    // stopped, not where the user moved the edit cursor; ask REAPER for the cursor then.
+    const auto stoppedCursor = processor_->getStoppedEditCursorSeconds();
+    const double playheadTime = stoppedCursor.value_or(playHeadState_.getPresentedPositionSeconds());
     if (playheadTime > 0.0) {
         const auto projection = activeContentProjection();
         const auto snap = readEditedSnapshot();
