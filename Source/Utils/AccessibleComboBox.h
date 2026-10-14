@@ -1,14 +1,13 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "ScreenReaderAnnouncer.h"
 
 namespace OpenTune::a11y {
 
-// ComboBox that speaks the new item when it is changed from the keyboard.
-// JUCE raises a UIA value change for a collapsed combo box, but NVDA does not
-// speak it, so arrows changed "Pitch snap" silently. Also adds Home/End
-// (first/last item), which the stock JUCE ComboBox ignores.
+// ComboBox with Home/End (first/last item), which the stock JUCE ComboBox ignores.
+// NVDA speaks the new item itself (JUCE raises a UIA value change); an extra
+// announcement here was heard twice. Pitch snap once seemed silent only because
+// it was scrolled out of the panel (NVDA: offscreen), see ParameterPanel.
 class AccessibleComboBox : public juce::ComboBox
 {
 public:
@@ -16,7 +15,6 @@ public:
 
     bool keyPressed(const juce::KeyPress& key) override
     {
-        const int before = getSelectedItemIndex();
         bool handled = false;
 
         if (key == juce::KeyPress::homeKey || key == juce::KeyPress::endKey)
@@ -37,10 +35,6 @@ public:
         {
             handled = juce::ComboBox::keyPressed(key);
         }
-
-        // Only speak a real change: at the edge of the list stay silent.
-        if (getSelectedItemIndex() != before)
-            announce(*this, getText());
 
         return handled;
     }

@@ -273,7 +273,9 @@ private:
         {
             if (safeThis == nullptr)
                 return;
-            safeThis->grabKeyboardFocus();
+            // Called more than once while the dialog opens: a repeated grab made NVDA repeat it.
+            if (! safeThis->hasKeyboardFocus (false))
+                safeThis->grabKeyboardFocus();
 
             // The message (shortcut name and current binding) is only painted: speak it
             // once, queued after the focus speech.

@@ -215,7 +215,12 @@ public:
             if (safeThis == nullptr || !safeThis->isShowing())
                 return;
             safeThis->keepValueBoxesOutOfTabOrder();
-            safeThis->semitoneSlider_.grabKeyboardFocus();
+            // Only the first time: parentHierarchyChanged fires more than once, and a repeated
+            // grab would make NVDA repeat the focus or pull focus back from another control.
+            if (!safeThis->initialFocusDone_) {
+                safeThis->initialFocusDone_ = true;
+                safeThis->semitoneSlider_.grabKeyboardFocus();
+            }
         });
     }
 
@@ -296,6 +301,7 @@ private:
     bool closing_ = false;
     ComponentListenerSubscription parentSubscription_{*this};
     juce::Component::SafePointer<juce::Component> dialogParent_;
+    bool initialFocusDone_ = false;
 
     // The editable value box is a Label that takes focus and opens an unnamed text
     // editor: a second Tab stop per slider. The mouse can still edit it.

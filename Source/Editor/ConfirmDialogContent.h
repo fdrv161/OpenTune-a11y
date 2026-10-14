@@ -455,7 +455,10 @@ private:
             juce::Component* target = safeThis.getComponent();
             if (idx >= 0 && idx < safeThis->buttons_.size())
                 target = safeThis->buttons_[idx];
-            target->grabKeyboardFocus();
+            // takeKeyboardFocus runs more than once while the dialog opens; grabbing the
+            // already focused button again made NVDA repeat "dialog, OK button".
+            if (!target->hasKeyboardFocus(false))
+                target->grabKeyboardFocus();
 
             // The message is only painted, so speak it once. keepAll queues it after
             // the focus speech instead of cutting it off.

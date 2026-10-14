@@ -537,7 +537,7 @@ ParameterPanel::ParameterPanel()
 
     // Pitch Shift action button
     pitchShiftButton_ = std::make_unique<juce::TextButton>(LOC(kPitchShift) + "...");
-    pitchShiftButton_->setTooltip(LOC(kPitchShift));
+    // No tooltip: it repeated the button text, and NVDA read "Pitch Shift..., Pitch Shift".
     pitchShiftButton_->getProperties().set(UIColors::auroraChromeIntensityProperty,
                                            kAuroraSidebarChromeIntensity);
     pitchShiftButton_->onClick = [this] {
@@ -956,7 +956,6 @@ void ParameterPanel::refreshLocalizedText()
     // 更新 Tools 部分
     toolsHeader_.setText(LOC(kTools), juce::dontSendNotification);
     if (pitchShiftButton_) {
-        pitchShiftButton_->setTooltip(LOC(kPitchShift));
         setPitchShiftIndicator(pitchShiftSemitone_, pitchShiftCents_);
     }
     pitchGridSelector_.changeItemText(1, LOC(kNoSnap));
