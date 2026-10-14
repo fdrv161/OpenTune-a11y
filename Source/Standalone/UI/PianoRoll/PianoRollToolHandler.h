@@ -96,6 +96,9 @@ public:
         Merged,             // J: note merged with the next one, index is the result
         SplitInHalf,        // X: no clear pitch change, split in the middle
         NoteTooShort,       // X: note shorter than two minimal parts
+        SplitAtCursor,      // Shift+X: index is the left part
+        CursorUnknown,      // Shift+X: the host edit cursor is not known (not REAPER, or playing)
+        CursorOutsideNote,  // Shift+X: the edit cursor is not inside the selected note
         NoAdjacentNote,     // J: no touching next note
         AllSelected,        // Ctrl+A: all notes selected
         ModulationChanged,  // arrows or Enter with the Pitch Modulation tool
@@ -206,6 +209,8 @@ public:
         std::function<void(size_t, float, float)> notifyNoteOffsetChanged;
         // notes is the current list (after a move it already holds the new pitch), index is a note or -1.
         std::function<void(KeyboardNoteEvent, const std::vector<Note>&, int)> notifyKeyboardNote;
+        // Accessibility: REAPER's edit cursor in source seconds while the transport is stopped.
+        std::function<std::optional<double>()> getEditCursorSourceTime;
         // Tool switched by a key: the screen reader announces the new tool.
         std::function<void(ToolId)> notifyToolChangedFromKeyboard;
 
@@ -338,7 +343,7 @@ private:
     void extendSelectionByKeyboard(bool moveRight);
     void resizeSelectedNoteByKeyboard(bool startEdge, int direction);
     void notifyKeyboardNote(KeyboardNoteEvent event, const std::vector<Note>& notes, int index);
-    void splitSelectedNoteByKeyboard();
+    void splitSelectedNoteByKeyboard(bool atEditCursor = false);
     void mergeSelectedNoteWithNext();
     void adjustSelectedNotesModDriftByKeyboard(int direction, bool fine);
     void adjustSelectedNotesVolumeByKeyboard(int direction, bool fine);

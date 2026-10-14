@@ -412,6 +412,7 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
     // EQ 工具：主音符 index 由 ToolHandler 唯一判定并直通；EQ cursor 经主题机制应用
     toolCtx.openEqPreview = [this](int primaryIndex) { openEqPopupForSelection(primaryIndex); };
     toolCtx.openEqFromKeyboard = [this](int primaryIndex) { openEqPopupForSelection(primaryIndex, true); };
+    toolCtx.getEditCursorSourceTime = [this]() { return stoppedEditCursorSourceTime(); };
     toolCtx.eqCursor = eqCursor_;
     toolCtx.showToolSelectionMenu = [this]() {
         // 在当前鼠标屏幕位置弹出纵向图标工具栏
@@ -5138,6 +5139,22 @@ void PianoRollComponent::copySelectedNotes()
                                       juce::String(static_cast<int>(notesClipboard_.size()))));
 }
 
+std::optional<double> PianoRollComponent::stoppedEditCursorSourceTime() const
+{
+    if (processor_ == nullptr)
+        return std::nullopt;
+    const auto cursor = processor_->getStoppedEditCursorSeconds();
+    if (!cursor)
+        return std::nullopt;
+    // Project (timeline) seconds to the clip's source seconds, as for the playhead in pasteNotes.
+    const auto projection = activeContentProjection();
+    const auto snap = readEditedSnapshot();
+    if (!projection.isValid() || !snap)
+        return std::nullopt;
+    const PianoRollTimeMap map(projection, *snap->timeGrid, makeViewMapper());
+    return map.timelineToSource(*cursor);
+}
+
 void PianoRollComponent::pasteNotes()
 {
     if (notesClipboard_.empty()) {
@@ -6069,6 +6086,17 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
         }
         case Event::NoteTooShort:
             a11y::announce(*this, LOC_RAW("Note too short to split"));
+            return;
+        case Event::SplitAtCursor:
+            a11y::announce(*this, Loc::format(LOC_RAW("Note split at the cursor: {0}"),
+                                              describeKeyboardNote(notes, index, NoteDetail::Target) + ", "
+                                                  + describeKeyboardNote(notes, index + 1, NoteDetail::Target)));
+            return;
+        case Event::CursorUnknown:
+            a11y::announce(*this, LOC_RAW("Edit cursor unknown: works in REAPER with playback stopped"));
+            return;
+        case Event::CursorOutsideNote:
+            a11y::announce(*this, LOC_RAW("The edit cursor is not inside the note"));
             return;
         case Event::Merged:
             a11y::announce(*this, LOC_RAW("Notes merged") + ", "
