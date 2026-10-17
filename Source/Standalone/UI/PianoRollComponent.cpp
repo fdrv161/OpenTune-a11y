@@ -420,14 +420,8 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
         showToolSelectionBar(mousePos);
     };
     toolCtx.notifyAutoTuneRequested = [this]() { listeners_.call([](Listener& l) { l.autoTuneRequested(); }); };
-    toolCtx.notifyPlayPauseToggle = [this]() {
-        pluginTransportRequestMs_ = juce::Time::getMillisecondCounterHiRes();
-        listeners_.call([](Listener& l) { l.playPauseToggleRequested(); });
-    };
-    toolCtx.notifyStopPlayback = [this]() {
-        pluginTransportRequestMs_ = juce::Time::getMillisecondCounterHiRes();
-        listeners_.call([](Listener& l) { l.stopPlaybackRequested(); });
-    };
+    toolCtx.notifyPlayPauseToggle = [this]() { listeners_.call([](Listener& l) { l.playPauseToggleRequested(); }); };
+    toolCtx.notifyStopPlayback = [this]() { listeners_.call([](Listener& l) { l.stopPlaybackRequested(); }); };
     toolCtx.notifyEscapeKey = [this]() {
         // Accessibility: an open EQ window closes first.
         if (eqPopup_ != nullptr) {
@@ -5146,27 +5140,18 @@ void PianoRollComponent::copySelectedNotes()
                                       juce::String(static_cast<int>(notesClipboard_.size()))));
 }
 
-// Accessibility: follow REAPER's own transport state, read on every frame, so the place
-// where playback paused or stopped is known exactly and without the plugin's delay.
+// Accessibility: follow REAPER's own transport state, read on every frame, to know the
+// edit cursor at the moment playback paused (so a later cursor move can be noticed).
 void PianoRollComponent::trackReaperTransport()
 {
     const auto transport = processor_ != nullptr ? processor_->getReaperTransport() : std::nullopt;
     if (!transport)
         return;
 
-    if (transport->isRunning())
-        lastRunningPosition_ = transport->playPosition;
-
     if (transport->playState != lastReaperPlayState_) {
         const bool wasRunning = (lastReaperPlayState_ & (1 | 4)) != 0;
-        if (wasRunning && !transport->isRunning()) {
+        if (wasRunning && !transport->isRunning())
             haltEditCursor_ = transport->editCursor;
-            haltWasStop_ = !transport->isPaused();
-            haltPosition_ = lastRunningPosition_;
-            // REAPER's Stop puts the playhead back to the edit cursor. When the stop came from
-            // Space in the plugin, the user meant "stop here", so that place is kept (below).
-            haltFromPlugin_ = juce::Time::getMillisecondCounterHiRes() - pluginTransportRequestMs_ < 2000.0;
-        }
         lastReaperPlayState_ = transport->playState;
     }
 }
@@ -5177,13 +5162,14 @@ std::optional<PianoRollComponent::SongPosition> PianoRollComponent::currentSongP
     if (!transport || transport->isRunning())
         return std::nullopt;
 
-    // Moving the edit cursor after a pause or stop always wins.
-    const bool cursorMoved = haltEditCursor_ && std::abs(transport->editCursor - *haltEditCursor_) > 1.0e-6;
-    if (transport->isPaused())
+    // The same place REAPER announces. Paused: where playback paused, unless the edit cursor
+    // was moved during the pause. Stopped: the edit cursor (REAPER itself decides whether a
+    // stop moves it; the plugin's own guess was a quarter second off in a user test).
+    if (transport->isPaused()) {
+        const bool cursorMoved = haltEditCursor_ && std::abs(transport->editCursor - *haltEditCursor_) > 1.0e-6;
         return cursorMoved ? SongPosition{ transport->editCursor, SongPosition::Source::EditCursor }
                            : SongPosition{ transport->playPosition, SongPosition::Source::Paused };
-    if (haltEditCursor_ && haltWasStop_ && haltFromPlugin_ && !cursorMoved)
-        return SongPosition{ haltPosition_, SongPosition::Source::PluginStop };
+    }
     return SongPosition{ transport->editCursor, SongPosition::Source::EditCursor };
 }
 
@@ -6204,9 +6190,8 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
                 return;
             }
             const auto seconds = juce::String(position->seconds, 2);
-            const char* pattern = position->source == SongPosition::Source::Paused     ? "Position {0} s, paused"
-                                : position->source == SongPosition::Source::PluginStop ? "Position {0} s, where playback stopped"
-                                                                                       : "Position {0} s, edit cursor";
+            const char* pattern = position->source == SongPosition::Source::Paused ? "Position {0} s, paused"
+                                                                                   : "Position {0} s, edit cursor";
             a11y::announce(*this, Loc::format(LOC_RAW(pattern), seconds));
             return;
         }
