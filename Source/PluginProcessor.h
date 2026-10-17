@@ -49,9 +49,7 @@
 #include "Utils/SilentGapDetector.h"
 #include "Utils/TimeCoordinate.h"
 #include "Utils/UndoManager.h"
-#if !JucePlugin_Build_Standalone
-#include "Plugin/ReaperHostBridge.h"
-#endif
+#include "Plugin/ReaperHostBridge.h"   // declarations only; the .cpp is built for the plugin
 #include "Utils/VocoderModelWeight.h"
 #include "Utils/PianoKeyAudition.h"
 #include "Utils/NoteAudition.h"
@@ -1017,11 +1015,11 @@ public:
     PianoKeyAudition& getPianoKeyAudition() { return pianoKeyAudition_; }
     NoteAudition& getNoteAudition() { return noteAudition_; }
 #if !JucePlugin_Build_Standalone
-    // Accessibility: REAPER's edit cursor while stopped (see ReaperHostBridge).
+    // Accessibility: REAPER's transport state and positions (see ReaperHostBridge).
     juce::VST3ClientExtensions* getVST3ClientExtensions() override { return &reaperHost_; }
-    std::optional<double> getStoppedEditCursorSeconds() const { return reaperHost_.getStoppedEditCursorSeconds(); }
+    std::optional<ReaperHostBridge::Transport> getReaperTransport() const { return reaperHost_.getTransport(); }
 #else
-    std::optional<double> getStoppedEditCursorSeconds() const { return std::nullopt; }
+    std::optional<ReaperHostBridge::Transport> getReaperTransport() const { return std::nullopt; }
 #endif
     // Rendered (corrected) audio of a content. In ARA it is owned by the DocumentController,
     // not by this plugin instance, so resolve it through the shared service lookup.

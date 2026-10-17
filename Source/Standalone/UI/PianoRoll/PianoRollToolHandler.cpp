@@ -740,7 +740,7 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     // Ctrl+Left/Right move the end of the note, Ctrl+Shift+Left/Right its start.
     const bool resizeKey = leftOrRight && mods.isCtrlDown() && !mods.isAltDown();
     const bool extraKey = ((altOnly || ctrlOnly || ctrlShift) && upOrDown) || (shiftOnly && leftOrRight) || resizeKey
-        || (shiftOnly && isSplitKey)
+        || (shiftOnly && (isSplitKey || isInfoKey))
         || (plain && (isInfoKey || isResetKey || isSplitKey || isMergeKey || isHomeOrEnd));
     if (extraKey
         && KeyShortcutConfig::findShortcutForBinding(ctx_.getShortcutSettings(),
@@ -776,6 +776,10 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
     }
     if (shiftOnly && isSplitKey) {
         splitSelectedNoteByKeyboard(true);
+        return true;
+    }
+    if (shiftOnly && isInfoKey) {
+        notifyKeyboardNote(KeyboardNoteEvent::PositionInfo, committedNotes(ctx_), -1);
         return true;
     }
     // Shift+Left/Right extend the selection, like Shift+click on a note.
