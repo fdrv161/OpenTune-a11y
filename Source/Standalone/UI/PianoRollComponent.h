@@ -247,9 +247,15 @@ public:
     bool getSingleSelectedNoteParameters(float& retuneSpeedPercent, float& vibratoDepth, float& vibratoRate) const;
 
     AudioEditingScheme::ParameterEditResult editParameter(AudioEditingScheme::ParameterId id, float value);
-    // Accessibility: REAPER's edit cursor while stopped, if known: project seconds and
-    // the clip's source seconds. Right after a stop it is the stop position (see the .cpp).
-    std::optional<double> stoppedEditCursorTimeline() const;
+    // Accessibility: where the user is in the song while REAPER is paused or stopped
+    // (project seconds), and the same in the clip's source seconds. Empty while playing
+    // or in other hosts. See trackReaperTransport.
+    struct SongPosition {
+        enum class Source { Paused, PluginStop, EditCursor };
+        double seconds = 0.0;
+        Source source = Source::EditCursor;
+    };
+    std::optional<SongPosition> currentSongPosition() const;
     std::optional<double> stoppedEditCursorSourceTime() const;
     // Accessibility: what a parameter knob change did, for speech ("Applied to notes: 3").
     juce::String describeParameterEdit(AudioEditingScheme::ParameterId id,
@@ -641,10 +647,15 @@ private:
     ReadContentSnapshotFn readContentSnapshot_;
     std::shared_ptr<ContentEditCommands> contentCommands_;
     OpenTuneAudioProcessor* processor_ = nullptr;
-    // Accessibility: where playback last stopped and REAPER's edit cursor at that moment.
-    bool stopPositionValid_ = false;
-    double stopPositionSeconds_ = 0.0;
-    std::optional<double> editCursorAtStop_;
+    // Accessibility: REAPER transport as last seen (trackReaperTransport) and the last halt.
+    void trackReaperTransport();
+    int lastReaperPlayState_ = 0;
+    double lastRunningPosition_ = 0.0;
+    std::optional<double> haltEditCursor_;   // edit cursor when playback paused or stopped
+    bool haltWasStop_ = false;
+    bool haltFromPlugin_ = false;            // stopped with Space in the plugin
+    double haltPosition_ = 0.0;              // where playback was when it halted
+    double pluginTransportRequestMs_ = -1.0e9;
 
     std::shared_ptr<const EditableContentSnapshot> readSnapshotFor(ContentKey key) const {
         return readContentSnapshot_ ? readContentSnapshot_(key) : nullptr;

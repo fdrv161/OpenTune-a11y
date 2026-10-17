@@ -420,8 +420,14 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
         showToolSelectionBar(mousePos);
     };
     toolCtx.notifyAutoTuneRequested = [this]() { listeners_.call([](Listener& l) { l.autoTuneRequested(); }); };
-    toolCtx.notifyPlayPauseToggle = [this]() { listeners_.call([](Listener& l) { l.playPauseToggleRequested(); }); };
-    toolCtx.notifyStopPlayback = [this]() { listeners_.call([](Listener& l) { l.stopPlaybackRequested(); }); };
+    toolCtx.notifyPlayPauseToggle = [this]() {
+        pluginTransportRequestMs_ = juce::Time::getMillisecondCounterHiRes();
+        listeners_.call([](Listener& l) { l.playPauseToggleRequested(); });
+    };
+    toolCtx.notifyStopPlayback = [this]() {
+        pluginTransportRequestMs_ = juce::Time::getMillisecondCounterHiRes();
+        listeners_.call([](Listener& l) { l.stopPlaybackRequested(); });
+    };
     toolCtx.notifyEscapeKey = [this]() {
         // Accessibility: an open EQ window closes first.
         if (eqPopup_ != nullptr) {
@@ -4025,14 +4031,8 @@ void PianoRollComponent::onScrollVBlankCallback(double timestampSec)
     if (playStateChanged) {
         userScrollHold_ = false;
         lastObservedPlayHeadPlaying_ = playingNow;
-        // Accessibility: remember where playback stopped (see stoppedEditCursorTimeline).
-        stopPositionValid_ = !playingNow;
-        stopPositionSeconds_ = playHeadState_.getPresentedPositionSeconds();
-        editCursorAtStop_.reset();
     }
-    // REAPER reports "stopped" a little after the plugin sees it; take its edit cursor then.
-    if (stopPositionValid_ && !editCursorAtStop_ && processor_ != nullptr)
-        editCursorAtStop_ = processor_->getStoppedEditCursorSeconds();
+    trackReaperTransport();
 
     double playheadTime = playHeadState_.getPresentedPositionSeconds();
     if (pendingSeekTime_ >= 0.0) {
@@ -5146,26 +5146,53 @@ void PianoRollComponent::copySelectedNotes()
                                       juce::String(static_cast<int>(notesClipboard_.size()))));
 }
 
-std::optional<double> PianoRollComponent::stoppedEditCursorTimeline() const
+// Accessibility: follow REAPER's own transport state, read on every frame, so the place
+// where playback paused or stopped is known exactly and without the plugin's delay.
+void PianoRollComponent::trackReaperTransport()
 {
-    if (processor_ == nullptr)
+    const auto transport = processor_ != nullptr ? processor_->getReaperTransport() : std::nullopt;
+    if (!transport)
+        return;
+
+    if (transport->isRunning())
+        lastRunningPosition_ = transport->playPosition;
+
+    if (transport->playState != lastReaperPlayState_) {
+        const bool wasRunning = (lastReaperPlayState_ & (1 | 4)) != 0;
+        if (wasRunning && !transport->isRunning()) {
+            haltEditCursor_ = transport->editCursor;
+            haltWasStop_ = !transport->isPaused();
+            haltPosition_ = lastRunningPosition_;
+            // REAPER's Stop puts the playhead back to the edit cursor. When the stop came from
+            // Space in the plugin, the user meant "stop here", so that place is kept (below).
+            haltFromPlugin_ = juce::Time::getMillisecondCounterHiRes() - pluginTransportRequestMs_ < 2000.0;
+        }
+        lastReaperPlayState_ = transport->playState;
+    }
+}
+
+std::optional<PianoRollComponent::SongPosition> PianoRollComponent::currentSongPosition() const
+{
+    const auto transport = processor_ != nullptr ? processor_->getReaperTransport() : std::nullopt;
+    if (!transport || transport->isRunning())
         return std::nullopt;
-    const auto cursor = processor_->getStoppedEditCursorSeconds();
-    if (!cursor)
-        return std::nullopt;
-    // Stopped with Space in the plugin, REAPER may leave its edit cursor where playback
-    // began (or move it only later). While nobody has moved the cursor since that stop,
-    // the place where playback stopped is what the user means.
-    if (stopPositionValid_ && editCursorAtStop_ && std::abs(*editCursorAtStop_ - *cursor) < 1.0e-6)
-        return stopPositionSeconds_;
-    return cursor;
+
+    // Moving the edit cursor after a pause or stop always wins.
+    const bool cursorMoved = haltEditCursor_ && std::abs(transport->editCursor - *haltEditCursor_) > 1.0e-6;
+    if (transport->isPaused())
+        return cursorMoved ? SongPosition{ transport->editCursor, SongPosition::Source::EditCursor }
+                           : SongPosition{ transport->playPosition, SongPosition::Source::Paused };
+    if (haltEditCursor_ && haltWasStop_ && haltFromPlugin_ && !cursorMoved)
+        return SongPosition{ haltPosition_, SongPosition::Source::PluginStop };
+    return SongPosition{ transport->editCursor, SongPosition::Source::EditCursor };
 }
 
 std::optional<double> PianoRollComponent::stoppedEditCursorSourceTime() const
 {
-    const auto cursor = stoppedEditCursorTimeline();
-    if (!cursor)
+    const auto position = currentSongPosition();
+    if (!position)
         return std::nullopt;
+    const auto cursor = std::optional<double>(position->seconds);
     // Project (timeline) seconds to the clip's source seconds, as for the playhead in pasteNotes.
     const auto projection = activeContentProjection();
     const auto snap = readEditedSnapshot();
@@ -5194,8 +5221,8 @@ void PianoRollComponent::pasteNotes()
     double pasteStartTime = 0.0;
     // Accessibility: with REAPER stopped the plugin's playhead is where playback last
     // stopped, not where the user moved the edit cursor; ask REAPER for the cursor then.
-    const auto stoppedCursor = stoppedEditCursorTimeline();
-    const double playheadTime = stoppedCursor.value_or(playHeadState_.getPresentedPositionSeconds());
+    const auto songPosition = currentSongPosition();
+    const double playheadTime = songPosition ? songPosition->seconds : playHeadState_.getPresentedPositionSeconds();
     if (playheadTime > 0.0) {
         const auto projection = activeContentProjection();
         const auto snap = readEditedSnapshot();
@@ -6164,6 +6191,25 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             if (index >= 0 && index < static_cast<int>(notes.size()))
                 auditionNote(notes[static_cast<size_t>(index)]);
             return;
+        case Event::PositionInfo:
+        {
+            // Shift+I: where the plugin thinks the user is, and where that comes from.
+            if (processor_ == nullptr || !processor_->getReaperTransport()) {
+                a11y::announce(*this, LOC_RAW("Position unknown: works in REAPER"));
+                return;
+            }
+            const auto position = currentSongPosition();
+            if (!position) {
+                a11y::announce(*this, LOC_RAW("Playing: the position is known after a pause or stop"));
+                return;
+            }
+            const auto seconds = juce::String(position->seconds, 2);
+            const char* pattern = position->source == SongPosition::Source::Paused     ? "Position {0} s, paused"
+                                : position->source == SongPosition::Source::PluginStop ? "Position {0} s, where playback stopped"
+                                                                                       : "Position {0} s, edit cursor";
+            a11y::announce(*this, Loc::format(LOC_RAW(pattern), seconds));
+            return;
+        }
         case Event::ArrowHint:
         {
             // Says what Ctrl+Up/Down edits with the current tool.

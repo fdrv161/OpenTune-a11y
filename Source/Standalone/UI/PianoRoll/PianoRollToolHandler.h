@@ -106,6 +106,7 @@ public:
         Removed,            // Delete or Cut: index is the number of removed notes
         VolumeChanged,      // arrows or Enter with the Volume Envelope tool
         ArrowHint,          // plain Up/Down: say that Ctrl+Up/Down edits (index unused)
+        PositionInfo,       // Shift+I: say where in the song the cursor actions work (index unused)
         RangeSelected,      // Shift+Left/Right: index is the note at the moving end
         NoteResized,        // Ctrl(+Shift)+Left/Right: index is the resized note
         SingleNoteNeeded    // the action works on one selected note only

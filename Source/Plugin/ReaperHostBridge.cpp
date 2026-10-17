@@ -36,6 +36,7 @@ constexpr char kReaperHostApplicationIid[16] = {
 void ReaperHostBridge::setIHostApplication(Steinberg::FUnknown* host)
 {
     getCursorPosition_ = nullptr;
+    getPlayPosition_ = nullptr;
     getPlayState_ = nullptr;
 #if JUCE_WINDOWS
     if (host == nullptr)
@@ -50,6 +51,7 @@ void ReaperHostBridge::setIHostApplication(Steinberg::FUnknown* host)
     // REAPER API functions are plain C functions that live as long as REAPER,
     // so the interface itself can be released right away.
     getCursorPosition_ = reinterpret_cast<double (*)()>(reaper->getReaperApi("GetCursorPosition"));
+    getPlayPosition_ = reinterpret_cast<double (*)()>(reaper->getReaperApi("GetPlayPosition"));
     getPlayState_ = reinterpret_cast<int (*)()>(reaper->getReaperApi("GetPlayState"));
     reaper->release();
 #else
@@ -57,14 +59,15 @@ void ReaperHostBridge::setIHostApplication(Steinberg::FUnknown* host)
 #endif
 }
 
-std::optional<double> ReaperHostBridge::getStoppedEditCursorSeconds() const
+std::optional<ReaperHostBridge::Transport> ReaperHostBridge::getTransport() const
 {
-    if (getCursorPosition_ == nullptr || getPlayState_ == nullptr)
+    if (getCursorPosition_ == nullptr || getPlayPosition_ == nullptr || getPlayState_ == nullptr)
         return std::nullopt;
-    // GetPlayState: bit 1 playing, 2 paused, 4 recording. Paused keeps the cursor meaningful.
-    if ((getPlayState_() & (1 | 4)) != 0)
-        return std::nullopt;
-    return getCursorPosition_();
+    Transport transport;
+    transport.playState = getPlayState_();
+    transport.editCursor = getCursorPosition_();
+    transport.playPosition = getPlayPosition_();
+    return transport;
 }
 
 } // namespace OpenTune
