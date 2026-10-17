@@ -251,7 +251,7 @@ public:
     // (project seconds), and the same in the clip's source seconds. Empty while playing
     // or in other hosts. See trackReaperTransport.
     struct SongPosition {
-        enum class Source { Paused, PluginStop, EditCursor };
+        enum class Source { Paused, EditCursor };
         double seconds = 0.0;
         Source source = Source::EditCursor;
     };
@@ -650,12 +650,7 @@ private:
     // Accessibility: REAPER transport as last seen (trackReaperTransport) and the last halt.
     void trackReaperTransport();
     int lastReaperPlayState_ = 0;
-    double lastRunningPosition_ = 0.0;
     std::optional<double> haltEditCursor_;   // edit cursor when playback paused or stopped
-    bool haltWasStop_ = false;
-    bool haltFromPlugin_ = false;            // stopped with Space in the plugin
-    double haltPosition_ = 0.0;              // where playback was when it halted
-    double pluginTransportRequestMs_ = -1.0e9;
 
     std::shared_ptr<const EditableContentSnapshot> readSnapshotFor(ContentKey key) const {
         return readContentSnapshot_ ? readContentSnapshot_(key) : nullptr;
