@@ -110,6 +110,9 @@ OpenTuneDocumentController::~OpenTuneDocumentController()
     }
     playbackRenderers_.clear();
 
+    if (contentRenderService_)
+        contentRenderService_->clearAll();
+
     ProcessRenderRuntime::getInstance().releaseOwner();
 }
 
@@ -2042,7 +2045,7 @@ bool OpenTuneDocumentController::birthContentForModification(AudioModification& 
         }
     }
 
-    // 3. Extract ch0 for async F0 (skip if F0 already available)
+    // 3. Extract channel 0 (left for stereo) for async F0 (skip if already available)
     std::vector<float> channel0Data;
     if (!alreadyHasF0)
     {

@@ -43,8 +43,11 @@ constexpr const char* kSharedEqSuppressRemoveConfirmationKey = "shared.eq.suppre
 constexpr const char* kSharedOnboardingShownKey = "shared.onboardingShown";
 constexpr const char* kPluginEditorSizeKey = "defaultSize";
 constexpr const char* kShortcutSchemaVersionKey = "shared.shortcuts.schemaVersion";
-// 2: Pitch Modulation / Pitch Drift got default keys F3 / F5 (Windows).
-constexpr int kShortcutSchemaVersion = 2;
+constexpr int kShortcutMouseSchemaVersion = 1;
+constexpr int kShortcutMacDefaultsSchemaVersion = 2;
+// 3: Pitch Modulation / Pitch Drift got default keys F3 / F5 (Windows).
+constexpr int kShortcutModDriftKeysSchemaVersion = 3;
+constexpr int kShortcutSchemaVersion = 3;
 
 juce::File resolveSettingsDirectory(const AppPreferences::StorageOptions& storageOptions)
 {
@@ -281,11 +284,13 @@ KeyShortcutConfig::KeyShortcutSettings decodeShortcutSettings(const juce::Proper
 {
     auto settings = KeyShortcutConfig::KeyShortcutSettings::getDefault();
     const int storedSchemaVersion = properties.getIntValue(kShortcutSchemaVersionKey, 0);
-    // Schema 1 added mouse bindings; do not merge them in again.
-    const bool migrateMouseDefaults = storedSchemaVersion < 1;
-    // Schema 2: modulation and drift used to have no keys, so settings stored
-    // an empty string. Do not treat it as a user choice; adopt the new F3 / F5.
-    const bool adoptNewToolDefaults = storedSchemaVersion < 2;
+    const bool migrateMouseDefaults = storedSchemaVersion < kShortcutMouseSchemaVersion;
+#if JUCE_MAC
+    const bool migrateMacDefaultShortcuts = storedSchemaVersion < kShortcutMacDefaultsSchemaVersion;
+#endif
+    // Modulation and drift used to have no keys, so settings stored an empty string.
+    // Do not treat it as a user choice; adopt the new F3 / F5.
+    const bool adoptNewToolDefaults = storedSchemaVersion < kShortcutModDriftKeysSchemaVersion;
 
     for (const auto& info : KeyShortcutConfig::kShortcutInfos) {
         if (!properties.containsKey(info.storageKey))
@@ -309,6 +314,46 @@ KeyShortcutConfig::KeyShortcutSettings decodeShortcutSettings(const juce::Proper
                         decoded.addBinding(defaultBinding);
                 }
             }
+#if JUCE_MAC
+            if (migrateMacDefaultShortcuts) {
+                const auto zoomModifiers = juce::ModifierKeys::commandModifier | juce::ModifierKeys::altModifier;
+                const auto transportModifiers = zoomModifiers | juce::ModifierKeys::shiftModifier;
+                const auto replaceBinding = [&decoded](const KeyShortcutConfig::KeyBinding& oldBinding,
+                                                       const KeyShortcutConfig::KeyBinding& newBinding) {
+                    if (decoded.hasBinding(oldBinding)) {
+                        decoded.removeBinding(oldBinding);
+                        decoded.addBinding(newBinding);
+                    }
+                };
+
+                if (info.id == KeyShortcutConfig::ShortcutId::Delete)
+                    decoded.removeBinding({ '1', {} });
+                else if (info.id == KeyShortcutConfig::ShortcutId::ToolHandDraw)
+                    replaceBinding({ '5', {} }, { 'H', {} });
+                else if (info.id == KeyShortcutConfig::ShortcutId::ToolAutoTune)
+                    replaceBinding({ '6', {} }, { 'A', {} });
+                else if (info.id == KeyShortcutConfig::ShortcutId::PlayPause)
+                    replaceBinding({ juce::KeyPress::spaceKey, {} },
+                                   { juce::KeyPress::spaceKey, transportModifiers });
+                else if (info.id == KeyShortcutConfig::ShortcutId::Stop)
+                    replaceBinding({ '.', {} }, { '.', transportModifiers });
+                else if (info.id == KeyShortcutConfig::ShortcutId::PlayFromStart)
+                    replaceBinding({ '.', juce::ModifierKeys::commandModifier },
+                                   { juce::KeyPress::returnKey, transportModifiers });
+                else if (info.id == KeyShortcutConfig::ShortcutId::ZoomHorizontalIn)
+                    replaceBinding({ juce::KeyPress::rightKey, zoomModifiers },
+                                   { juce::KeyPress::rightKey, transportModifiers });
+                else if (info.id == KeyShortcutConfig::ShortcutId::ZoomHorizontalOut)
+                    replaceBinding({ juce::KeyPress::leftKey, zoomModifiers },
+                                   { juce::KeyPress::leftKey, transportModifiers });
+                else if (info.id == KeyShortcutConfig::ShortcutId::ZoomVerticalIn)
+                    replaceBinding({ juce::KeyPress::upKey, zoomModifiers },
+                                   { juce::KeyPress::upKey, transportModifiers });
+                else if (info.id == KeyShortcutConfig::ShortcutId::ZoomVerticalOut)
+                    replaceBinding({ juce::KeyPress::downKey, zoomModifiers },
+                                   { juce::KeyPress::downKey, transportModifiers });
+            }
+#endif
             settings.bindings[static_cast<size_t>(info.id)] = std::move(decoded);
         }
     }

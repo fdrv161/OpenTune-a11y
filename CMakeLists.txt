@@ -370,7 +370,7 @@ set(OPENTUNE_PLUGIN_COMMON_ARGS
     BUNDLE_ID "com.daya.opentune"
     VERSION "${PROJECT_VERSION}"
     PLUGIN_NAME "OpenTune"
-    PLUGIN_DESCRIPTION "AI-powered Auto-Tune Plugin"
+    DESCRIPTION "AI-powered Auto-Tune Plugin"
     PLUGIN_CATEGORY "Fx|Pitch Shift"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
@@ -1368,6 +1368,15 @@ if(APPLE AND TARGET OpenTuneAU_AU)
         ${AU_APPLE_GAME_MODEL_COPY_COMMANDS}
         COMMENT "Copying AI models to AU component Resources..."
     )
+
+    # JUCE emits only "ARA", while the ARA SDK AUv2 example lists both
+    # "Effect" and "ARA". Apply the required tags before packaging signs the AU.
+    add_custom_command(TARGET OpenTuneAU_AU POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            "-DAU_INFO_PLIST=$<TARGET_BUNDLE_DIR:OpenTuneAU_AU>/Contents/Info.plist"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SetAUV2Metadata.cmake"
+        COMMENT "Patching AUv2 ARA AudioComponents metadata..."
+    )
 endif()
 
 # ==============================================================================
@@ -1807,6 +1816,16 @@ if(OPENTUNE_BUILD_TESTS)
         target_compile_options(OpenTuneVst3StateCodecTests PRIVATE /utf-8 /EHsc)
     endif()
     add_test(NAME Vst3ProcessorStateCodecTests COMMAND OpenTuneVst3StateCodecTests)
+
+    add_executable(OpenTuneVisibleTrackCountTests
+        Tests/VisibleTrackCountTests.cpp
+    )
+    target_include_directories(OpenTuneVisibleTrackCountTests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+    if(MSVC)
+        target_compile_options(OpenTuneVisibleTrackCountTests PRIVATE /utf-8 /EHsc)
+    endif()
+    add_test(NAME VisibleTrackCountTests COMMAND OpenTuneVisibleTrackCountTests)
 
     # Standalone processor settings codec (OTSS v3 / legacy v2) tests.
     add_executable(OpenTuneStandaloneStateCodecTests

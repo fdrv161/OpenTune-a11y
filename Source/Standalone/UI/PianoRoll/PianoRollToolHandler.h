@@ -109,7 +109,8 @@ public:
         PositionInfo,       // Shift+I: say where in the song the cursor actions work (index unused)
         RangeSelected,      // Shift+Left/Right: index is the note at the moving end
         NoteResized,        // Ctrl(+Shift)+Left/Right: index is the resized note
-        SingleNoteNeeded    // the action works on one selected note only
+        SingleNoteNeeded,   // the action works on one selected note only
+        EditFailed          // the edit was not committed (e.g. the notes changed meanwhile)
     };
 
     // PianoRoll 组件提供的回调上下文。

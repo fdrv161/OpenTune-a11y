@@ -5335,7 +5335,10 @@ bool PianoRollComponent::matchesShortcut(KeyShortcutConfig::ShortcutId id,
 
 bool PianoRollComponent::handlePointerShortcut(const KeyShortcutConfig::KeyBinding& binding)
 {
-    const auto id = KeyShortcutConfig::findShortcutForBinding(shortcutSettings_, binding);
+    const auto scope = AudioEditingScheme::usesNotesPrimaryScheme(audioEditingScheme_)
+        ? KeyShortcutConfig::kPianoRollOpenDyneScope
+        : KeyShortcutConfig::kPianoRollOpenTuneScope;
+    const auto id = KeyShortcutConfig::findShortcutForBinding(shortcutSettings_, binding, scope);
     if (id == KeyShortcutConfig::ShortcutId::Count)
         return false;
 
@@ -6230,6 +6233,14 @@ void PianoRollComponent::handleKeyboardNote(PianoRollToolHandler::KeyboardNoteEv
             a11y::announce(*this, text);
             return;
         }
+        case Event::EditFailed:
+            // Sighted users see the note stay put and, when the notes changed meanwhile,
+            // the selection highlight disappear; say both.
+            a11y::announce(*this, interactionState_.noteSelection.selectedIndices.empty()
+                                      ? LOC_RAW("Could not apply, selection cleared")
+                                      : LOC_RAW("Could not apply"),
+                           a11y::SpeechQueue::keepAll);
+            return;
     }
 }
 
