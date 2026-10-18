@@ -744,7 +744,9 @@ bool PianoRollToolHandler::handleNoteArrowKey(const juce::KeyPress& key)
         || (plain && (isInfoKey || isResetKey || isSplitKey || isMergeKey || isHomeOrEnd));
     if (extraKey
         && KeyShortcutConfig::findShortcutForBinding(ctx_.getShortcutSettings(),
-                                                     KeyShortcutConfig::KeyBinding(keyCode, mods))
+                                                     KeyShortcutConfig::KeyBinding(keyCode, mods),
+                                                     openDyne ? KeyShortcutConfig::kPianoRollOpenDyneScope
+                                                              : KeyShortcutConfig::kPianoRollOpenTuneScope)
                != KeyShortcutConfig::ShortcutId::Count)
         return false;
 

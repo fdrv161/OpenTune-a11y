@@ -1052,7 +1052,10 @@ void OpenTuneAudioProcessor::initializeRuntimeStateOnce()
         bindings.retireSegment = [this](ContentKey segmentContentKey) {
             // CaptureSegmentContent owns content; CRS cache is derived.
             if (contentRenderService_) {
+                contentRenderService_->removePlaybackSource(segmentContentKey);
                 contentRenderService_->removeRenderCache(segmentContentKey);
+                contentRenderService_->removeStretcher(segmentContentKey);
+                contentRenderService_->getTimeStretchCache().invalidate(segmentContentKey);
             }
         };
 
@@ -1098,6 +1101,7 @@ void OpenTuneAudioProcessor::initializeRuntimeStateOnce()
                                 : initializationError;
                             return result;
                         }
+                        // F0 is mono; stereo input uses channel 0 (left).
                         const float* src = audio->getReadPointer(0);
                         const int numSamples = audio->getNumSamples();
                         auto extraction = f0Svc->extractF0(
@@ -1763,13 +1767,13 @@ bool OpenTuneAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) 
     const auto in = layouts.getMainInputChannelSet();
     const auto out = layouts.getMainOutputChannelSet();
 
-    if (out != juce::AudioChannelSet::stereo())
-        return false;
-
 #if JucePlugin_Build_Standalone
-    return in.isDisabled();
+    return out == juce::AudioChannelSet::stereo() && in.isDisabled();
+#elif JucePlugin_Build_AU
+    return (in == juce::AudioChannelSet::mono() && out == juce::AudioChannelSet::mono())
+        || (in == juce::AudioChannelSet::stereo() && out == juce::AudioChannelSet::stereo());
 #else
-    return in == juce::AudioChannelSet::stereo();
+    return in == juce::AudioChannelSet::stereo() && out == juce::AudioChannelSet::stereo();
 #endif
 }
 
@@ -3288,6 +3292,7 @@ OpenTuneAudioProcessor::resolveAnalysisAudioProvider(ContentKey key)
         && readSource.audioSampleRate > 0.0)
     {
         result.audioBuffer = readSource.audioBuffer;
+        // F0 is mono; stereo input uses channel 0 (left).
         result.samples = readSource.audioBuffer->getReadPointer(0);
         result.numSamples = readSource.audioBuffer->getNumSamples();
         result.sampleRate = readSource.audioSampleRate;
@@ -3302,6 +3307,7 @@ OpenTuneAudioProcessor::resolveAnalysisAudioProvider(ContentKey key)
             && snap->audioSampleRate > 0.0)
         {
             result.audioBuffer = snap->audioBuffer;
+            // F0 is mono; stereo input uses channel 0 (left).
             result.samples = snap->audioBuffer->getReadPointer(0);
             result.numSamples = snap->audioBuffer->getNumSamples();
             result.sampleRate = snap->audioSampleRate;
@@ -4264,6 +4270,7 @@ bool OpenTuneAudioProcessor::requestContentRefresh(const OpenTuneAudioProcessor:
 
                         if (!segments.empty()) {
                             pitchCurve->replaceCorrectionSegments(segments);
+                            pitchCurve->retainVoicedCorrectionSegments();
                         }
                     }
                 }
