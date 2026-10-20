@@ -8,7 +8,7 @@ on:
     inputs:
       juce_ref:
         description: "JUCE branch or tag"
-        default: "master"
+        default: "8.0.12"   # same JUCE as the author's release build
         required: true
 
 concurrency:
