@@ -445,7 +445,18 @@ if(APPLE)
 endif()
 
 if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES STREQUAL CMAKE_HOST_SYSTEM_PROCESSOR)
-    set_target_properties(OpenTune_vst3_helper PROPERTIES
+    # The helper must be host-arch so it can run while the plugin is universal
+    # or cross-compiled. JUCE 8.0.6 creates one executable named juce_vst3_helper.
+    # Later JUCE revisions name it after the plugin instead.
+    if(TARGET OpenTune_vst3_helper)
+        set(OPENTUNE_VST3_HELPER_TARGET OpenTune_vst3_helper)
+    elseif(TARGET juce_vst3_helper)
+        set(OPENTUNE_VST3_HELPER_TARGET juce_vst3_helper)
+    else()
+        message(FATAL_ERROR
+            "VST3 manifest helper target is missing. Expected OpenTune_vst3_helper or juce_vst3_helper.")
+    endif()
+    set_target_properties(${OPENTUNE_VST3_HELPER_TARGET} PROPERTIES
         OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}")
 endif()
 
@@ -565,6 +576,9 @@ juce_add_binary_data(OpenTuneResources
 set(OPENTUNE_COMMON_SOURCES
         Source/Services/F0ExtractionService.cpp
         Source/Services/F0ExtractionService.h
+        Source/Services/HNSEPOnnxPostprocessor.cpp
+        Source/Services/HNSEPOnnxPostprocessor.h
+        Source/Services/HnsepAudio.h
         Source/Services/ReferenceAnalysisService.cpp
         Source/Services/ReferenceAnalysisService.h
 
@@ -943,10 +957,10 @@ if(APPLE)
     target_sources(OpenTuneAU PRIVATE ${OPENTUNE_CAPTURE_SOURCES})
 endif()
 
-# SoundTouch Library v2.3.3 (WSOLA time-stretch for vocal Stage 2).
+# SoundTouch Library v2.3.2 (WSOLA time-stretch for vocal Stage 2).
 # Replaced Rubber Band R3 (phase vocoder) — see archive change swap-time-stretch-to-soundtouch.
 # License: LGPL-2.1. See LICENSES/soundtouch.LGPL-2.1.txt.
-set(SOUNDTOUCH_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/soundtouch-2.3.3)
+set(SOUNDTOUCH_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/soundtouch-2.3.2)
 if(EXISTS ${SOUNDTOUCH_DIR}/source/SoundTouch/SoundTouch.cpp)
     set(OPENTUNE_SOUNDTOUCH_SOURCES
         ${SOUNDTOUCH_DIR}/source/SoundTouch/AAFilter.cpp
@@ -1004,7 +1018,7 @@ foreach(_opentune_target IN LISTS OPENTUNE_SHARED_CODE_TARGETS)
             ${CMAKE_CURRENT_SOURCE_DIR}/Source/Standalone
             ${CMAKE_CURRENT_SOURCE_DIR}/Source
             ${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/r8brain-free-src-master
-            ${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/soundtouch-2.3.3/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/soundtouch-2.3.2/include
             ${ONNXRUNTIME_INCLUDE_DIR}
             # JUCE module include paths — required for juce::* namespace resolution
             $<BUILD_INTERFACE:${OPENTUNE_JUCE_DIR}/modules/juce_audio_basics>
