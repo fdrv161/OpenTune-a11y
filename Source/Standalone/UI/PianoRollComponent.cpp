@@ -136,6 +136,12 @@ void PianoRollComponent::initializeUIComponents() {
     verticalZoomInButton_.onClick = [this] { zoomVerticalIn(); };
     addAndMakeVisible(verticalZoomInButton_);
 
+    // Accessibility: zoom is only for the eyes and has keyboard shortcuts; NVDA object
+    // navigation read these as unnamed "+" / "-" buttons inside the notes list.
+    for (auto* button : { &horizontalZoomOutButton_, &horizontalZoomInButton_,
+                          &verticalZoomOutButton_, &verticalZoomInButton_ })
+        button->setAccessible(false);
+
     updateZoomControlColours();
 
     scrollVBlankAttachment_ = std::make_unique<juce::VBlankAttachment>(
