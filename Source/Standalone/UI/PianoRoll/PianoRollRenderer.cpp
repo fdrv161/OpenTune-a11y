@@ -1,4 +1,5 @@
 #include "PianoRollRenderer.h"
+#include "../../../Utils/WaveformTime.h"
 #include "PianoRollTimeMap.h"
 #include "../UiAssets.h"
 #include "../UIColors.h"
@@ -539,11 +540,12 @@ void PianoRollRenderer::drawWaveform(juce::Graphics& g,
     const int drawEndX = std::min(endX, segEndX);
     if (drawEndX <= drawStartX) return;
 
+    // 波形是时间参考，垂直居中在当前视口，不跟随音高滚动或纵向缩放。
     const float centerY = ctx.height / 2.0f;
     const float amplitudeScale = ctx.height / 2.0f;
 
     const int samplesPerPeak = WaveformMipmap::kSamplesPerPeak[wfLevelIndex];
-    const double timePerPeak = static_cast<double>(samplesPerPeak) / WaveformMipmap::kBaseSampleRate;
+    const double timePerPeak = waveformSecondsPerPeak(samplesPerPeak, item.audioSampleRate);
     const int64_t numPeaks = static_cast<int64_t>(wfLevel.peaks.size());
     const auto themeId = UIColors::currentThemeId();
     const bool isAurora = themeId == ThemeId::Aurora;
@@ -1380,61 +1382,6 @@ void PianoRollRenderer::drawSelectedNoteHighlights(juce::Graphics& g,
         g.drawRect(noteBounds, playheadHighlight ? 1.4f : (isAurora ? 1.5f : 1.2f));
     }
 }
-
-void PianoRollRenderer::drawGhostNotes(juce::Graphics& g, const RenderContext& ctx, const ReferenceOverlay& overlay)
-{
-    if (overlay.ghostNotes.empty())
-        return;
-
-    static constexpr float kDashLengths[] = { 2.0f, 4.0f };
-    const juce::Colour fillColour = overlay.ghostColour.withMultipliedAlpha(overlay.ghostOpacity);
-    const juce::Colour borderColour = overlay.ghostColour.withMultipliedAlpha(overlay.ghostOpacity * 0.7f);
-
-    ContentRenderItem overlayItem;
-    overlayItem.projection = overlay.sourceProjection;
-    overlayItem.timeGrid = overlay.timeGrid;
-    jassert(overlayItem.timeGrid);
-
-    for (const auto& note : overlay.ghostNotes)
-    {
-        const float adjustedPitch = note.getAdjustedPitch();
-        if (adjustedPitch <= 0.0f)
-            continue;
-
-        const int x1 = sourceTimeToScreenX(note.startTime, ctx, overlayItem);
-        const int x2 = sourceTimeToScreenX(note.endTime, ctx, overlayItem);
-        if (x2 <= ctx.contentStartX || x1 >= ctx.width)
-            continue;
-
-        const float midi = ctx.coords.freqToMidi(adjustedPitch);
-        const float y = ctx.coords.midiToY(midi) - (ctx.pixelsPerSemitone * 0.5f);
-        const float w = std::max(1.0f, static_cast<float>(x2 - x1));
-        const float h = ctx.pixelsPerSemitone;
-        const auto noteBounds = juce::Rectangle<float>(static_cast<float>(x1), y, w, h);
-
-        g.setColour(fillColour);
-        g.fillRect(noteBounds);
-
-        g.setColour(borderColour);
-        g.drawDashedLine(
-            juce::Line<float>(noteBounds.getX(), noteBounds.getY(),
-                              noteBounds.getRight(), noteBounds.getY()),
-            kDashLengths, 2, 1.0f);
-        g.drawDashedLine(
-            juce::Line<float>(noteBounds.getX(), noteBounds.getBottom(),
-                              noteBounds.getRight(), noteBounds.getBottom()),
-            kDashLengths, 2, 1.0f);
-        g.drawDashedLine(
-            juce::Line<float>(noteBounds.getX(), noteBounds.getY(),
-                              noteBounds.getX(), noteBounds.getBottom()),
-            kDashLengths, 2, 1.0f);
-        g.drawDashedLine(
-            juce::Line<float>(noteBounds.getRight(), noteBounds.getY(),
-                              noteBounds.getRight(), noteBounds.getBottom()),
-            kDashLengths, 2, 1.0f);
-    }
-}
-
 // ============================================================================
 // TimeGrid Anchors (cached slot — neutral lines, no interaction)
 // ============================================================================

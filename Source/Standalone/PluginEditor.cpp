@@ -37,7 +37,6 @@
 #include "Content/StandaloneClipContent.h"
 #include "Utils/KeyShortcutConfig.h"
 #include "Utils/PlacementActions.h"
-#include "DSP/ReferenceFeatures.h"
 #include <cmath>
 #include <atomic>
 #include <cstdlib>
@@ -851,6 +850,8 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
         processorRef_.resetInferenceBackend(true, std::move(applyF0Model));
     else
         applyF0Model();
+
+    beginExternalEditSession();
 }
 
 OpenTuneAudioProcessorEditor::~OpenTuneAudioProcessorEditor()
@@ -1143,6 +1144,8 @@ bool OpenTuneAudioProcessorEditor::shouldAcceptUndoRedoShortcut()
 
 bool OpenTuneAudioProcessorEditor::isInterestedInFileDrag(const juce::StringArray& files)
 {
+    if (externalEditActive_)
+        return false;
     if (onboardingOverlay_ != nullptr && onboardingOverlay_->isActive())
         return false;
 
@@ -1158,6 +1161,8 @@ bool OpenTuneAudioProcessorEditor::isInterestedInFileDrag(const juce::StringArra
 
 void OpenTuneAudioProcessorEditor::filesDropped(const juce::StringArray& files, int x, int y)
 {
+    if (externalEditActive_)
+        return;
     if (onboardingOverlay_ != nullptr && onboardingOverlay_->isActive())
         return;
 
@@ -1575,7 +1580,7 @@ void OpenTuneAudioProcessorEditor::timerCallback()
         && isShowing() && getPeer() != nullptr && getWidth() > 0 && getHeight() > 0
         && juce::ModalComponentManager::getInstance()->getNumModalComponents() == 0
         && !projectOperationBusy_ && !isImportInProgress_ && !exportInProgress_.load()
-        && !originalF0OverlayLatched_)
+        && !originalF0OverlayLatched_ && !externalEditActive_)
     {
         onboardingRequested();
     }
@@ -1593,16 +1598,17 @@ void OpenTuneAudioProcessorEditor::timerCallback()
     pianoRoll_.onHeartbeatTick();
 
     if (pianoRoll_.isShowing()) {
+        double overviewSampleRate = 0.0;
+        if (const auto snap = processorRef_.getContentSnapshot(pianoRoll_.editedContentKey()))
+            overviewSampleRate = snap->audioSampleRate;
         overviewStrip_.onHeartbeatTick(pianoRoll_.editedContentKey(),
                                        pianoRoll_.activeContentProjection(),
                                        pianoRoll_.timelineCamera(),
-                                       pianoRoll_.timelinePolicyViewportWidth());
+                                       pianoRoll_.timelinePolicyViewportWidth(),
+                                       overviewSampleRate);
     }
 
     const bool allowSecondaryRefresh = !inferenceActive_ || ((++inferenceActiveTickCounter_ % 4) == 0);
-    if (allowSecondaryRefresh && referenceRefreshPending_)
-        refreshReferenceContext();
-
 // Update playhead position from processor (presented position via shared projection)
     double currentPositionSeconds = processorRef_.getPosition();
     double sampleRate = processorRef_.getSampleRate();
@@ -1676,7 +1682,7 @@ void OpenTuneAudioProcessorEditor::timerCallback()
                                                                lastPianoRollTimeGridRevision_,
                                                                lastPianoRollPitchRevision_);
         if (revisionPulse.notesChanged) {
-            // Same content, fresh notes – typically GAME's async commit.
+            // Same content, fresh notes - async note generator commit.
             pianoRoll_.onNotesRevisionChanged();
         }
         if (revisionPulse.timeGridChanged) {
@@ -1763,7 +1769,7 @@ void OpenTuneAudioProcessorEditor::timerCallback()
         shouldShowOverlay = true;
     }
 
-    // Reference-note analysis 与 Original F0 提取共用同一 overlay 系统。
+    // Time-stretch anchor analysis 与 Original F0 提取共用同一 overlay 系统。
     if (!shouldShowOverlay && !isWorkspaceView_) {
         const int activeTrack = getStandaloneActiveTrack(processorRef_);
         const int activePlacementIndex = getStandaloneSelectedPlacementIndex(processorRef_, activeTrack);
@@ -1771,9 +1777,10 @@ void OpenTuneAudioProcessorEditor::timerCallback()
             ? getStandaloneContentKey(processorRef_, activeTrack, activePlacementIndex)
             : ContentKey{};
         if (activeContentKey.isValid()) {
-            const ReferenceFeatureSet refFeatures = processorRef_.getReferenceFeatures(activeContentKey);
-            if (refFeatures.status == ReferenceFeatureStatus::Extracting) {
-                autoRenderOverlay_.setMessageText(LOC_RAW("Analyzing reference Clip"));
+            const auto activeSnap = processorRef_.getContentSnapshot(activeContentKey);
+            if (activeSnap
+                && activeSnap->referenceFeatures.status == ReferenceFeatureStatus::Extracting) {
+                autoRenderOverlay_.setMessageText(LOC_RAW("Analyzing audio"));
                 shouldShowOverlay = true;
             }
         }
@@ -1859,17 +1866,12 @@ void OpenTuneAudioProcessorEditor::syncSharedAppPreferences()
     const auto& sharedPreferences = preferencesState.shared;
     const auto& visualPreferences = sharedPreferences.pianoRollVisualPreferences;
     const bool experimentalFeaturesEnabled = sharedPreferences.experimentalFeaturesEnabled;
-    const auto referenceAlignMode = sharedPreferences.experimentalReferenceAlignMode;
 
     // EQ popup「以后不再提示」偏好直接注入（无中转层）
     pianoRoll_.setAppPreferences(&appPreferences_);
 
-    processorRef_.setExperimentalReferenceAlignMode(referenceAlignMode);
-    if (appliedReferenceAlignMode_ != referenceAlignMode
-        || appliedExperimentalFeaturesEnabled_ != experimentalFeaturesEnabled) {
-        appliedReferenceAlignMode_ = referenceAlignMode;
+    if (appliedExperimentalFeaturesEnabled_ != experimentalFeaturesEnabled) {
         appliedExperimentalFeaturesEnabled_ = experimentalFeaturesEnabled;
-        referenceRefreshPending_ = true;
     }
 
     if (languageState_ != nullptr) {
@@ -1905,7 +1907,6 @@ void OpenTuneAudioProcessorEditor::syncSharedAppPreferences()
     parameterPanel_.setOpenDyneMode(AudioEditingScheme::usesNotesPrimaryScheme(sharedPreferences.audioEditingScheme));
     parameterPanel_.setActiveTool(static_cast<int>(pianoRoll_.getCurrentTool()));
     arrangementView_.setZoomSensitivity(sharedPreferences.zoomSensitivity);
-    arrangementView_.setExperimentalReferenceControlsEnabled(experimentalFeaturesEnabled);
     menuBar_.setNoteNameMode(visualPreferences.noteNameMode);
     menuBar_.setShowUnvoicedFrames(visualPreferences.showUnvoicedFrames);
 
@@ -2099,8 +2100,58 @@ enum class ImportMode
     SeparateTracks  // 分别导入到多个轨道（齐头）
 };
 
+void OpenTuneAudioProcessorEditor::beginExternalEditSession()
+{
+    externalEditSessionDir_ = ExternalEditSession::sessionDirectoryFromCommandLine();
+    if (!externalEditSessionDir_.isDirectory())
+        return;
+
+    auto document = ExternalEditSession::readDocument(externalEditSessionDir_);
+    if (!document.has_value() || !ExternalEditSession::audioFile(externalEditSessionDir_).existsAsFile())
+        return;
+
+    externalEditActive_ = true;
+    externalEditDocument_ = std::move(document);
+    menuBar_.setProfile(MenuBarComponent::Profile::Plugin);
+    transportBar_.setLayoutProfile(TransportBarComponent::LayoutProfile::ExternalEdit);
+    isTrackPanelVisible_ = false;
+    topBar_.setTrackPanelToggleVisible(false);
+    isWorkspaceView_ = false;
+    transportBar_.setWorkspaceView(false);
+    arrangementView_.setVisible(false);
+    pianoRoll_.setVisible(true);
+    overviewStrip_.setVisible(true);
+    importAudioFileToTrack(0, ExternalEditSession::audioFile(externalEditSessionDir_), 0.0);
+    resized();
+}
+
+void OpenTuneAudioProcessorEditor::saveAndReturnRequested()
+{
+    if (!externalEditActive_ || !externalEditSessionDir_.isDirectory())
+        return;
+
+    ContentKey key;
+    if (auto* arrangement = processorRef_.getStandaloneArrangement()) {
+        StandaloneArrangement::Placement placement;
+        if (arrangement->getPlacementByIndex(0, 0, placement))
+            key = placement.contentKey;
+    }
+    const auto snapshot = processorRef_.getContentSnapshot(key);
+    if (snapshot == nullptr || !ExternalEditSession::writeReturn(externalEditSessionDir_, *snapshot)) {
+        ConfirmDialogContent::showMessage(&contentRoot_,
+                                          LOC(kSaveAndReturn),
+                                          LOC(kExternalEditNeedsAudio));
+        return;
+    }
+
+    if (auto* app = juce::JUCEApplicationBase::getInstance())
+        app->quit();
+}
+
 void OpenTuneAudioProcessorEditor::importAudioRequested()
 {
+    if (externalEditActive_)
+        return;
 // Direct file chooser dialog with multi-select support
 // Import destination track determined by currently selected track
     DBG("OpenTuneAudioProcessorEditor::importAudioRequested called");
@@ -2368,8 +2419,26 @@ void OpenTuneAudioProcessorEditor::startPendingImport(PendingImport pendingImpor
                     safeThis->releaseImportBatchSlot(pendingImport.batchId);
 
                     safeThis->arrangementView_.requestContentRedraw();
-                    safeThis->arrangementView_.grabKeyboardFocus();
                     safeThis->applyPlacementSelectionContext(placement.trackId, committedPlacement.placementId);
+
+                    if (safeThis->externalEditActive_ && safeThis->externalEditDocument_.has_value()) {
+                        const auto& handedOff = *safeThis->externalEditDocument_;
+                        safeThis->processorRef_.applyReturnedExternalEdit(
+                            committedPlacement.contentKey, handedOff);
+                        const bool hasPlayableCurve = handedOff.pitchCurve != nullptr
+                            && handedOff.pitchCurve->hasUsableOriginalF0();
+                        if (!hasPlayableCurve) {
+                            OpenTuneAudioProcessor::ContentRefreshRequest refreshRequest;
+                            refreshRequest.contentKey = committedPlacement.contentKey;
+                            safeThis->processorRef_.requestContentRefresh(refreshRequest);
+                        }
+                        safeThis->viewToggled(false);
+                        safeThis->pianoRoll_.grabKeyboardFocus();
+                        safeThis->processNextImportInQueue();
+                        return;
+                    }
+
+                    safeThis->arrangementView_.grabKeyboardFocus();
 
                     OpenTuneAudioProcessor::ContentRefreshRequest refreshRequest;
                     refreshRequest.contentKey = committedPlacement.contentKey;
@@ -2670,6 +2739,8 @@ void OpenTuneAudioProcessorEditor::saveProjectRequested()
 
 void OpenTuneAudioProcessorEditor::openProjectRequested()
 {
+    if (externalEditActive_)
+        return;
     if (rejectProjectOperationIfBusy())
         return;
 
@@ -2996,8 +3067,6 @@ void OpenTuneAudioProcessorEditor::performUndoRedoAction(bool isUndo)
 
     projectSession_.markDirty();
     arrangementView_.requestContentRedraw();
-    referenceRefreshPending_ = true;
-    refreshReferenceContext();
 }
 
 void OpenTuneAudioProcessorEditor::undoRequested() { performUndoRedoAction(true); }
@@ -3161,6 +3230,8 @@ void OpenTuneAudioProcessorEditor::timelineDisplayModeChanged(TimelineDisplayMod
 
 void OpenTuneAudioProcessorEditor::viewToggled(bool workspaceView)
 {
+    if (externalEditActive_)
+        workspaceView = false;
     // Capture the timeline camera from the outgoing view before toggling visibility.
     const TimelineViewportCamera camera = isWorkspaceView_
         ? arrangementView_.timelineCamera()
@@ -3440,8 +3511,6 @@ void OpenTuneAudioProcessorEditor::placementSelectionChanged(int trackId, uint64
     applyPlacementSelectionContext(trackId, placementId);
 
     // 更新 reference context
-    referenceRefreshPending_ = true;
-    refreshReferenceContext();
 }
 
 void OpenTuneAudioProcessorEditor::placementTimingChanged(int trackId, int placementIndex)
@@ -3563,14 +3632,6 @@ void OpenTuneAudioProcessorEditor::playFromStartToggleRequested()
 
 void OpenTuneAudioProcessorEditor::autoTuneRequested()
 {
-    const auto autoRefUiState = evaluateAutoRefUiState();
-    if (autoRefUiState.shouldRunReferenceAuto()) {
-        if (handleAutoRefExecute()) {
-            projectSession_.markDirty();
-        }
-        return;
-    }
-
     const auto result = pianoRoll_.applyAutoTuneToSelection();
     if (!result.applied()) {
         if (result.status != PianoRollComponent::AutoTuneApplyStatus::NoChange) {
@@ -3816,295 +3877,6 @@ void OpenTuneAudioProcessorEditor::refreshAllUIFromProject()
     const int placementIndex = getStandaloneSelectedPlacementIndex(processorRef_, activeTrack);
     syncPianoRollFromPlacementSelection(activeTrack, placementIndex);
     arrangementView_.requestContentRedraw();
-    referenceRefreshPending_ = true;
-    refreshReferenceContext();
-}
-
-// ============================================================================
-// Reference Auto-Align Methods
-// ============================================================================
-
-// Look up a reference placement's content across all tracks.
-static bool findReferencePlacementInfo(OpenTuneAudioProcessor& processor,
-                                       uint64_t refPlacementId,
-                                       StandaloneArrangement::Placement& out)
-{
-    for (int t = 0; t < MAX_TRACKS; ++t) {
-        if (processor.getPlacementById(t, refPlacementId, out)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-OpenTuneAudioProcessorEditor::AutoRefUiState OpenTuneAudioProcessorEditor::evaluateAutoRefUiState() const
-{
-    AutoRefUiState uiState;
-    uiState.presentation.mode = ParameterPanel::AutoButtonPresentation::Mode::StandardAuto;
-
-    // OpenDyne 模式下 AUTO 按钮永远走 snap-to-scale，不走 Ref 路径
-    if (AudioEditingScheme::usesNotesPrimaryScheme(appliedAudioEditingScheme_)) {
-        return uiState;
-    }
-
-    const int trackId = getStandaloneActiveTrack(processorRef_);
-    const int placementIndex = getStandaloneSelectedPlacementIndex(processorRef_, trackId);
-    const uint64_t targetPlacementId = placementIndex >= 0
-        ? processorRef_.getPlacementId(trackId, placementIndex)
-        : 0;
-
-    const auto preferencesState = appPreferences_.getState();
-    const bool experimentalFeaturesEnabled = preferencesState.shared.experimentalFeaturesEnabled;
-
-    uiState.availability = processorRef_.queryAutoRefAvailability(targetPlacementId);
-    if (!experimentalFeaturesEnabled) {
-        return uiState;
-    }
-
-    if (uiState.availability.status == OpenTuneAudioProcessor::AutoRefAvailability::Status::Ready) {
-        uiState.presentation.mode = ParameterPanel::AutoButtonPresentation::Mode::ReferenceAuto;
-        return uiState;
-    }
-
-    return uiState;
-}
-
-void OpenTuneAudioProcessorEditor::refreshReferenceContext()
-{
-    const auto autoRefUiState = evaluateAutoRefUiState();
-    parameterPanel_.setAutoButtonPresentation(autoRefUiState.presentation);
-
-    if (!autoRefUiState.availability.hasReferenceBinding()) {
-        pianoRoll_.setReferenceOverlay(std::nullopt);
-        referenceRefreshPending_ = false;
-        return;
-    }
-
-    const auto preferencesState = appPreferences_.getState();
-    const bool experimentalFeaturesEnabled = preferencesState.shared.experimentalFeaturesEnabled;
-    if (!experimentalFeaturesEnabled) {
-        pianoRoll_.setReferenceOverlay(std::nullopt);
-        referenceRefreshPending_ = false;
-        return;
-    }
-
-    const int targetTrackId = getStandaloneActiveTrack(processorRef_);
-    StandaloneArrangement::Placement targetPlacement;
-    if (!processorRef_.getPlacementById(targetTrackId,
-                                        autoRefUiState.availability.targetPlacementId,
-                                        targetPlacement)) {
-        pianoRoll_.setReferenceOverlay(std::nullopt);
-        referenceRefreshPending_ = false;
-        return;
-    }
-
-    // Resolve reference content
-    StandaloneArrangement::Placement refPlacement;
-    if (!findReferencePlacementInfo(processorRef_, autoRefUiState.availability.referencePlacementId, refPlacement)) {
-        pianoRoll_.setReferenceOverlay(std::nullopt);
-        referenceRefreshPending_ = false;
-        return;
-    }
-
-    const auto targetPreheat = processorRef_.preheatReferenceAlignmentFeatures(targetPlacement.contentKey);
-    const auto referencePreheat = processorRef_.preheatReferenceAlignmentFeatures(refPlacement.contentKey);
-    const auto isPending = [](OpenTuneAudioProcessor::ReferenceAnalysisPreheatStatus status) {
-        return status == OpenTuneAudioProcessor::ReferenceAnalysisPreheatStatus::Queued
-            || status == OpenTuneAudioProcessor::ReferenceAnalysisPreheatStatus::WaitingForSource;
-    };
-    referenceRefreshPending_ = isPending(targetPreheat) || isPending(referencePreheat);
-
-    // If reference features are ready, set up piano roll overlay
-    if (refPlacement.contentKey.isValid()) {
-        const auto refSnapshot = processorRef_.getContentSnapshot(refPlacement.contentKey);
-        const ReferenceFeatureSet refFeatures = refSnapshot
-            ? refSnapshot->referenceFeatures
-            : ReferenceFeatureSet{};
-        if (refSnapshot != nullptr
-            && refFeatures.isReady()
-            && (refFeatures.producer == ReferenceFeatureProducer::StandardAuto
-                || refFeatures.producer == ReferenceFeatureProducer::Game))
-        {
-            PianoRollRenderer::ReferenceOverlay overlay;
-            const double visibleSourceStart = refPlacement.clipInSeconds;
-            const double visibleSourceEnd = visibleSourceStart + refPlacement.durationSeconds;
-            for (const auto& note : refFeatures.pitch.notes) {
-                Note visibleNote = note;
-                visibleNote.startTime = std::max(visibleNote.startTime, visibleSourceStart);
-                visibleNote.endTime = std::min(visibleNote.endTime, visibleSourceEnd);
-                if (visibleNote.endTime > visibleNote.startTime)
-                    overlay.ghostNotes.push_back(std::move(visibleNote));
-            }
-            overlay.ghostColour = juce::Colours::steelblue;
-            overlay.enabled = true;
-            overlay.sourceProjection = makePianoRollProjection(refPlacement, processorRef_);
-            overlay.timeGrid = refSnapshot->timeGrid;
-            pianoRoll_.setReferenceOverlay(overlay);
-            referenceRefreshPending_ = referenceRefreshPending_
-                || processorRef_.getReferenceFeatures(targetPlacement.contentKey).status
-                    == ReferenceFeatureStatus::Extracting;
-        } else {
-            pianoRoll_.setReferenceOverlay(std::nullopt);
-            referenceRefreshPending_ = referenceRefreshPending_
-                || refFeatures.status == ReferenceFeatureStatus::Extracting;
-        }
-    } else {
-        pianoRoll_.setReferenceOverlay(std::nullopt);
-    }
-}
-
-void OpenTuneAudioProcessorEditor::referenceButtonClicked(int trackId, uint64_t placementId,
-                                                           juce::Rectangle<int> buttonScreenArea)
-{
-    if (!appPreferences_.getState().shared.experimentalFeaturesEnabled) {
-        return;
-    }
-
-    resolveReferenceBindingMenu(trackId, placementId, buttonScreenArea);
-}
-
-void OpenTuneAudioProcessorEditor::resolveReferenceBindingMenu(int trackId, uint64_t targetPlacementId,
-                                                                juce::Rectangle<int> buttonScreenArea)
-{
-    if (!appPreferences_.getState().shared.experimentalFeaturesEnabled) {
-        return;
-    }
-
-    auto* arrangement = processorRef_.getStandaloneArrangement();
-    juce::PopupMenu menu;
-
-// Get target placement info
-    StandaloneArrangement::Placement targetPlacement;
-    if (!processorRef_.getPlacementById(trackId, targetPlacementId, targetPlacement)) {
-        return;
-    }
-
-// Check if already has reference binding
-    const uint64_t existingRef = arrangement->getPlacementReferencePlacement(trackId, targetPlacementId);
-    if (existingRef != 0) {
-        menu.addItem(LOC_RAW("Don't use reference Clip"),
-                     [safeEditor = juce::Component::SafePointer<OpenTuneAudioProcessorEditor>(this), trackId, targetPlacementId]() {
-            if (safeEditor == nullptr)
-                return;
-            auto* arrangement = safeEditor->processorRef_.getStandaloneArrangement();
-            const uint64_t beforeReference = arrangement->getPlacementReferencePlacement(trackId, targetPlacementId);
-            if (beforeReference == 0)
-                return;
-            if (!arrangement->setPlacementReferencePlacement(trackId, targetPlacementId, 0)) {
-                ConfirmDialogContent::showMessage(
-                    &safeEditor->contentRoot_,
-                    LOC_RAW("Reference Clip"),
-                    LOC_RAW("Unable to clear the current reference Clip binding."));
-                return;
-            }
-            safeEditor->processorRef_.getUndoManager().addAction(std::make_unique<ReferenceBindingAction>(
-                safeEditor->processorRef_, trackId, targetPlacementId, beforeReference, 0));
-            safeEditor->projectSession_.markDirty();
-            safeEditor->arrangementView_.requestContentRedraw();
-            safeEditor->referenceRefreshPending_ = true;
-            safeEditor->refreshReferenceContext();
-        });
-        menu.addSeparator();
-    }
-
-// Submenu: Select Reference Clip (list other clips in same view, excluding self)
-    juce::PopupMenu refMenu;
-    bool hasCandidates = false;
-
-    for (int t = 0; t < MAX_TRACKS; ++t) {
-        const int numPlacements = arrangement->getNumPlacements(t);
-        for (int pi = 0; pi < numPlacements; ++pi) {
-            StandaloneArrangement::Placement candidate;
-            if (!processorRef_.getPlacementByIndex(t, pi, candidate)) continue;
-            if (candidate.placementId == targetPlacementId) continue; // 排除自身
-            if (candidate.isRetired) continue;
-
-            if (!arrangement->canSetPlacementReferencePlacement(
-                    trackId, targetPlacementId, candidate.placementId)) continue;
-
-            hasCandidates = true;
-            const juce::String label = LOC(kReferenceMenuEntry)
-                .replace("{0}", juce::String(t + 1))
-                .replace("{1}", candidate.name.isNotEmpty() ? candidate.name : LOC(kClip))
-                .replace("{2}", juce::String(static_cast<juce::int64>(candidate.contentKey.objectId)));
-            refMenu.addItem(label,
-                            [safeEditor = juce::Component::SafePointer<OpenTuneAudioProcessorEditor>(this),
-                             trackId, targetPlacementId, candidate]() {
-                if (safeEditor == nullptr)
-                    return;
-                auto* arrangement = safeEditor->processorRef_.getStandaloneArrangement();
-                const uint64_t beforeReference = arrangement->getPlacementReferencePlacement(trackId, targetPlacementId);
-                if (beforeReference == candidate.placementId)
-                    return;
-                if (!arrangement->setPlacementReferencePlacement(
-                        trackId, targetPlacementId, candidate.placementId)) {
-                    ConfirmDialogContent::showMessage(
-                        &safeEditor->contentRoot_,
-                        LOC_RAW("Reference Clip"),
-                        LOC_RAW("That Clip no longer meets the reference binding requirements."));
-                    return;
-                }
-                safeEditor->processorRef_.getUndoManager().addAction(std::make_unique<ReferenceBindingAction>(
-                    safeEditor->processorRef_, trackId, targetPlacementId,
-                    beforeReference, candidate.placementId));
-                safeEditor->projectSession_.markDirty();
-                safeEditor->arrangementView_.requestContentRedraw();
-                safeEditor->referenceRefreshPending_ = true;
-                safeEditor->refreshReferenceContext();
-            });
-        }
-    }
-
-    if (hasCandidates) {
-        menu.addSubMenu(LOC_RAW("Select reference Clip"), refMenu);
-    } else {
-        menu.addItem(LOC_RAW("(No available reference Clips)"), false, false, nullptr);
-    }
-
-    if (buttonScreenArea.isEmpty())
-    {
-        const auto localAnchor = juce::Rectangle<float>(
-            0.0f,
-            static_cast<float>(arrangementView_.getHeight()),
-            200.0f,
-            1.0f);
-        buttonScreenArea = arrangementView_.localAreaToGlobal(localAnchor).toNearestInt();
-    }
-    menu.showMenuAsync(juce::PopupMenu::Options()
-        .withTargetScreenArea(buttonScreenArea)
-        .withParentComponent(&contentRoot_));
-}
-
-bool OpenTuneAudioProcessorEditor::handleAutoRefExecute()
-{
-    const int trackId = getStandaloneActiveTrack(processorRef_);
-    const int placementIndex = getStandaloneSelectedPlacementIndex(processorRef_, trackId);
-    if (placementIndex < 0) {
-        return false;
-    }
-
-    const uint64_t targetPlacementId = processorRef_.getPlacementId(trackId, placementIndex);
-    auto result = processorRef_.executeReferenceAlignmentForPlacement(targetPlacementId);
-    if (!result.succeeded()) {
-        if (result.status == OpenTuneAudioProcessor::ReferenceAlignmentResult::Status::TargetAnalysisNotReady
-            || result.status == OpenTuneAudioProcessor::ReferenceAlignmentResult::Status::ReferenceAnalysisNotReady) {
-            referenceRefreshPending_ = true;
-        }
-        const juce::String message = result.message.isNotEmpty()
-            ? result.message
-            : LOC(kAutoRefAlignmentFailed);
-        ConfirmDialogContent::showMessage(
-            &contentRoot_,
-            LOC(kAutoRef),
-            message);
-        refreshReferenceContext();
-        return false;
-    }
-
-    syncPianoRollFromPlacementSelection(trackId, placementIndex);
-    referenceRefreshPending_ = true;
-    refreshReferenceContext();
-    return true;
 }
 
 } // namespace OpenTune

@@ -1,4 +1,4 @@
-﻿#include "ArrangementViewComponent.h"
+#include "ArrangementViewComponent.h"
 #include "AuroraTheme.h"
 #include "../../PluginProcessor.h"
 #include "UiAssets.h"
@@ -8,11 +8,13 @@
 #include "TimelineLayerComposer.h"
 #include "../Utils/ZoomSensitivityConfig.h"
 #include "../../Utils/KeyShortcutConfig.h"
+#include "../../Utils/MagnifyZoom.h"
 #include "../../Utils/PlacementActions.h"
 #include "../../Utils/PlacementClipboard.h"
 #include "../../Utils/LocalizationManager.h"
 #include "../../Utils/SnapUtils.h"
 #include "../../Utils/TrackConstants.h"
+#include "../../Utils/WaveformTime.h"
 #include "../StandaloneArrangementHelpers.h"
 
 #include <algorithm>
@@ -38,70 +40,13 @@ struct ArrangementClipPaintInput {
     double fadeOutSeconds = 0.0;
     bool selected = false;
     bool preview = false;
-    bool hasReferenceBinding = false;
     double clipInSeconds = 0.0;
     double timelineStartSeconds = 0.0;
     double durationSeconds = 0.0;
     double pixelsPerSecond = 1.0;
     std::shared_ptr<const TimeGridSnapshot> timeGrid;
+    double audioSampleRate = 0.0;
 };
-
-juce::Rectangle<int> referenceButtonBoundsForClip(juce::Rectangle<int> placementBounds) noexcept
-{
-    return { placementBounds.getRight() - 20,
-             placementBounds.getBottom() - 20,
-             20,
-             20 };
-}
-
-juce::Rectangle<float> referenceBadgeBoundsFromButton(juce::Rectangle<int> buttonBounds) noexcept
-{
-    return { static_cast<float>(buttonBounds.getX() + 1),
-             static_cast<float>(buttonBounds.getY() + 2),
-             14.0f,
-             14.0f };
-}
-
-juce::Rectangle<float> referenceBadgeBoundsForClip(juce::Rectangle<int> placementBounds) noexcept
-{
-    return referenceBadgeBoundsFromButton(referenceButtonBoundsForClip(placementBounds));
-}
-
-void paintReferenceBadge(juce::Graphics& g,
-                         juce::Rectangle<float> badgeBounds,
-                         bool hasReferenceBinding,
-                         juce::Colour colour)
-{
-    if (hasReferenceBinding)
-    {
-        juce::Path referenceOutline;
-        referenceOutline.addRoundedRectangle(badgeBounds, 3.0f);
-        g.setColour(colour);
-        g.strokePath(referenceOutline, juce::PathStrokeType(2.0f));
-
-        const float spineX = badgeBounds.getX() + badgeBounds.getWidth() * 0.4f;
-        g.drawLine(spineX,
-                   badgeBounds.getY() + 2.5f,
-                   spineX,
-                   badgeBounds.getBottom() - 2.5f,
-                   2.0f);
-    }
-    else
-    {
-        juce::Path referenceOutline;
-        referenceOutline.addRoundedRectangle(badgeBounds, 3.0f);
-        g.setColour(colour);
-        g.strokePath(referenceOutline, juce::PathStrokeType(1.5f));
-
-        const float centreX = badgeBounds.getCentreX();
-        const float centreY = badgeBounds.getCentreY();
-        constexpr float halfLength = 3.5f;
-        g.drawLine(centreX - halfLength, centreY,
-                   centreX + halfLength, centreY, 1.5f);
-        g.drawLine(centreX, centreY - halfLength,
-                   centreX, centreY + halfLength, 1.5f);
-    }
-}
 
 juce::String formatGainLabel(float gain)
 {
@@ -154,7 +99,7 @@ static void paintHistoricalClipWaveform(juce::Graphics& g,
     const float midY = static_cast<float>(waveformBounds.getCentreY());
     const float halfH = waveformBounds.getHeight() * 0.45f;
     const int samplesPerPeak = WaveformMipmap::kSamplesPerPeak[levelIndex];
-    const double timePerPeak = static_cast<double>(samplesPerPeak) / WaveformMipmap::kBaseSampleRate;
+    const double timePerPeak = waveformSecondsPerPeak(samplesPerPeak, clip.audioSampleRate);
     const double timelineEndSeconds = clip.timelineStartSeconds + clip.durationSeconds;
     const auto& timeGrid = clip.timeGrid;
 
@@ -387,25 +332,6 @@ static void paintHistoricalClipTextFadeGain(juce::Graphics& g, const Arrangement
     g.drawText(formatGainLabel(clip.gain), textArea, juce::Justification::topRight);
 }
 
-static void paintHistoricalClipReferenceBadge(juce::Graphics& g,
-                                              const ArrangementClipPaintInput& clip)
-{
-    const auto placementBounds = clip.fullBounds.getSmallestIntegerContainer();
-    if (placementBounds.getWidth() <= 30)
-        return;
-
-    juce::Graphics::ScopedSaveState scoped(g);
-    g.reduceClipRegion(clip.paintClip);
-
-    const auto iconColour = clip.hasReferenceBinding
-        ? UIColors::textSecondary.withAlpha(0.75f)
-        : UIColors::textSecondary.withAlpha(0.35f);
-    paintReferenceBadge(g,
-                        referenceBadgeBoundsForClip(placementBounds),
-                        clip.hasReferenceBinding,
-                        iconColour);
-}
-
 static void paintHistoricalArrangementClips(juce::Graphics& g,
                                             const std::vector<ArrangementClipPaintInput>& clips,
                                             const WaveformMipmapCache& waveformMipmapCache)
@@ -484,12 +410,12 @@ std::vector<ArrangementClipPaintInput> collectVisibleArrangementClips(const Stan
                 placement.fadeOutDuration,
                 isSelected(trackId, placement.placementId),
                 false,
-                placement.referencePlacementId != 0,
                 placement.clipInSeconds,
                 placement.timelineStartSeconds,
                 placement.durationSeconds,
                 pixelsPerSecond,
-                snapshot->timeGrid
+                snapshot->timeGrid,
+                snapshot->audioSampleRate
             });
         }
     }
@@ -767,16 +693,16 @@ void ArrangementViewComponent::timerCallback()
     zoomPreviewActive_ = false;
     if (playingAfterZoom) {
         const double pps = camera_.pixelsPerSecond;
-        const double tileDuration = TimelineCompositeCache::kTileWidthPx / pps;
+        const double playbackTileDuration = TimelineCompositeCache::kTileWidthPx / pps;
         const double visibleDuration = getVisibleViewportWidth() / pps;
         const double visibleStart = camera_.visibleStartSeconds;
-        const double visibleEnd = visibleStart + visibleDuration;
-        const double ahead = std::min(6.0 * visibleDuration, 16.0 * tileDuration);
-        tileCoverageStartSeconds_ = std::max(0.0, std::floor((visibleStart - 2.0 * tileDuration) / tileDuration) * tileDuration);
-        tileCoverageEndSeconds_ = std::ceil((visibleEnd + ahead) / tileDuration) * tileDuration;
-        playbackPrepareNextTile_ = std::max<int64_t>(0, static_cast<int64_t>(std::floor(tileCoverageStartSeconds_ / tileDuration)));
+        const double playbackVisibleEnd = visibleStart + visibleDuration;
+        const double ahead = std::min(6.0 * visibleDuration, 16.0 * playbackTileDuration);
+        tileCoverageStartSeconds_ = std::max(0.0, std::floor((visibleStart - 2.0 * playbackTileDuration) / playbackTileDuration) * playbackTileDuration);
+        tileCoverageEndSeconds_ = std::ceil((playbackVisibleEnd + ahead) / playbackTileDuration) * playbackTileDuration;
+        playbackPrepareNextTile_ = std::max<int64_t>(0, static_cast<int64_t>(std::floor(tileCoverageStartSeconds_ / playbackTileDuration)));
         playbackPrepareFirstTile_ = playbackPrepareNextTile_;
-        playbackPrepareLastTile_ = static_cast<int64_t>(std::floor((tileCoverageEndSeconds_ - 1e-9) / tileDuration));
+        playbackPrepareLastTile_ = static_cast<int64_t>(std::floor((tileCoverageEndSeconds_ - 1e-9) / playbackTileDuration));
         playbackPrepareFirstRow_ = zoomFirstRow_;
         playbackPrepareLastRow_ = zoomLastRow_;
         playbackPrepareNextRow_ = playbackPrepareFirstRow_;
@@ -1142,22 +1068,6 @@ void ArrangementViewComponent::setVisibleTrackCount(int count)
     invalidateStableScene();
 }
 
-void ArrangementViewComponent::setExperimentalReferenceControlsEnabled(bool enabled)
-{
-    if (experimentalReferenceControlsEnabled_ == enabled) {
-        return;
-    }
-
-    experimentalReferenceControlsEnabled_ = enabled;
-    if (!experimentalReferenceControlsEnabled_) {
-        hoveredReferencePlacementId_ = 0;
-        hoveredReferenceButtonBounds_ = {};
-        setMouseCursor(juce::MouseCursor::NormalCursor);
-    }
-
-    requestContentRedraw();
-}
-
 void ArrangementViewComponent::resized()
 {
     cancelZoomPreview();
@@ -1300,7 +1210,6 @@ void ArrangementViewComponent::rebuildContentMetrics()
                 std::memcpy(&bits, &placement.fadeOutDuration, sizeof(bits));
                 revision = hashCombine(revision, static_cast<uint64_t>(bits));
             }
-            revision = hashCombine(revision, placement.referencePlacementId);
             // Include placement name in revision (content tile renders label)
             revision = hashCombine(revision, static_cast<uint64_t>(placement.name.hashCode()));
         }
@@ -1311,7 +1220,6 @@ void ArrangementViewComponent::rebuildContentMetrics()
     revision = hashCombine(revision, waveformRevision_);
     // Include visible track count (tile builder depends on it for lane rendering)
     revision = hashCombine(revision, static_cast<uint64_t>(visibleTrackCount_));
-    revision = hashCombine(revision, experimentalReferenceControlsEnabled_ ? 1ull : 0ull);
 
     contentMetrics_.revision = revision;
     contentMetrics_.maxEndTimeSeconds = maxEndTime;
@@ -1430,11 +1338,6 @@ void ArrangementViewComponent::buildCompositeForeground(
             return isPlacementSelected(trackId, placementId);
         });
     paintHistoricalArrangementClips(g, clips, waveformMipmapCache_);
-    if (experimentalReferenceControlsEnabled_)
-    {
-        for (const auto& clip : clips)
-            paintHistoricalClipReferenceBadge(g, clip);
-    }
 }
 
 void ArrangementViewComponent::prepareCoverageCompositeTiles(bool includeOverscan)
@@ -1870,39 +1773,15 @@ void ArrangementViewComponent::drawMoveDragOverlay(juce::Graphics& g)
             placement.fadeOutDuration,
             isPlacementSelected(state.trackId, state.placementId),
             true,
-            placement.referencePlacementId != 0,
             placement.clipInSeconds,
             target.startSeconds,
             state.durationSeconds,
             camera_.pixelsPerSecond,
-            snapshot->timeGrid
+            snapshot->timeGrid,
+            snapshot->audioSampleRate
         };
         paintHistoricalClipShellAndWaveform(g, clip, waveformMipmapCache_);
         paintHistoricalClipTextFadeGain(g, clip);
-        if (experimentalReferenceControlsEnabled_)
-            paintHistoricalClipReferenceBadge(g, clip);
-    }
-}
-
-void ArrangementViewComponent::drawReferenceHoverOverlay(juce::Graphics& g)
-{
-    if (!experimentalReferenceControlsEnabled_
-        || hoveredReferencePlacementId_ == 0
-        || hoveredReferenceButtonBounds_.isEmpty())
-        return;
-
-    auto& arrangement = *processor_.getStandaloneArrangement();
-    StandaloneArrangement::Placement placement;
-    for (int trackId = 0; trackId < OpenTuneAudioProcessor::MAX_TRACKS; ++trackId)
-    {
-        if (arrangement.getPlacementById(trackId, hoveredReferencePlacementId_, placement))
-        {
-            paintReferenceBadge(g,
-                                referenceBadgeBoundsFromButton(hoveredReferenceButtonBounds_),
-                                placement.referencePlacementId != 0,
-                                UIColors::accent);
-            return;
-        }
     }
 }
 
@@ -2047,7 +1926,6 @@ void ArrangementViewComponent::paint(juce::Graphics& g)
             g.reduceClipRegion(axis);
             drawImportDropPreview(g);
             drawMoveDragOverlay(g);
-            drawReferenceHoverOverlay(g);
         }
     }
 
@@ -2320,33 +2198,7 @@ double ArrangementViewComponent::readPlayheadSeconds() const
 
 void ArrangementViewComponent::mouseMove(const juce::MouseEvent& e)
 {
-    const auto oldHoveredReferencePlacementId = hoveredReferencePlacementId_;
-    const auto oldHoveredReferenceButtonBounds = hoveredReferenceButtonBounds_;
-    hoveredReferencePlacementId_ = 0;
-    hoveredReferenceButtonBounds_ = {};
-
     auto hit = hitTestPlacement(e.getPosition());
-    if (hit.trackId >= 0 && hit.placementIndex >= 0)
-    {
-        // Reference button area — match paint gate (width > 30)
-        if (experimentalReferenceControlsEnabled_ && hit.placementBounds.getWidth() > 30)
-        {
-            const auto referenceButtonBounds = referenceButtonBoundsForClip(hit.placementBounds);
-            if (referenceButtonBounds.contains(e.getPosition()))
-            {
-                hoveredReferencePlacementId_ = processor_.getPlacementId(hit.trackId, hit.placementIndex);
-                hoveredReferenceButtonBounds_ = referenceButtonBounds;
-            }
-        }
-    }
-
-    if (oldHoveredReferencePlacementId != hoveredReferencePlacementId_
-        || oldHoveredReferenceButtonBounds != hoveredReferenceButtonBounds_)
-    {
-        const auto dirtyBounds = oldHoveredReferenceButtonBounds.getUnion(hoveredReferenceButtonBounds_);
-        if (!dirtyBounds.isEmpty())
-            repaint(dirtyBounds);
-    }
 
     // Ctrl+drag cursor preview 鈥?only on empty area, consistent with mouseDown
     if (e.mods.isCtrlDown() && hit.trackId < 0)
@@ -2358,13 +2210,6 @@ void ArrangementViewComponent::mouseMove(const juce::MouseEvent& e)
     if (e.y <= rulerHeight_)
     {
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-        return;
-    }
-
-    // Reference button area: pointing hand cursor
-    if (hoveredReferencePlacementId_ != 0)
-    {
-        setMouseCursor(juce::MouseCursor::PointingHandCursor);
         return;
     }
 
@@ -2418,29 +2263,8 @@ void ArrangementViewComponent::mouseDown(const juce::MouseEvent& e)
         }
     }
 
-    // Hit-test placement before seek 鈥?reference button intercepts without seeking
+    // Hit-test placement before seek — placement selection/drag intercepts without seeking
     auto hit = hitTestPlacement(e.getPosition());
-
-    // Check reference button click (bottom-right corner) 鈥?always active, before seek
-    if (experimentalReferenceControlsEnabled_ && hit.trackId >= 0 && hit.placementBounds.getWidth() > 30)
-    {
-        const auto refBtnArea = referenceButtonBoundsForClip(hit.placementBounds);
-        if (refBtnArea.contains(e.getPosition()))
-        {
-            // Select this placement so downstream context is correct
-            const uint64_t hitPlacementId = processor_.getPlacementId(hit.trackId, hit.placementIndex);
-            selectedPlacements_.clear();
-            selectedPlacements_.insert(PlacementSelectionKey{hit.trackId, hitPlacementId});
-            commitPlacementSelection(PlacementSelectionKey{hit.trackId, hitPlacementId});
-
-            // Compute reference button screen area for popup menu positioning
-            auto refBtnScreenArea = localAreaToGlobal(refBtnArea.toFloat()).toNearestInt();
-            listeners_.call([&](Listener& l) {
-                l.referenceButtonClicked(hit.trackId, hitPlacementId, refBtnScreenArea);
-            });
-            return;
-        }
-    }
 
     // Clicked on placement body/edge/handle 鈥?do NOT seek playhead, only select/drag
     if (hit.trackId >= 0)
@@ -2858,6 +2682,17 @@ void ArrangementViewComponent::mouseWheelMove(const juce::MouseEvent& e, const j
             camera_.pixelsPerSecond);
         commitViewportRequest(req);
     }
+}
+
+void ArrangementViewComponent::mouseMagnify(const juce::MouseEvent& e, float scaleFactor)
+{
+    const auto zoom = magnifyScaleToZoom(scaleFactor);
+    if (!zoom.apply || camera_.pixelsPerSecond <= 0.0)
+        return;
+
+    const double anchorX = static_cast<double>(e.x - kArrangementContentStartX);
+    const double anchorTime = camera_.visibleStartSeconds + anchorX / camera_.pixelsPerSecond;
+    applyHorizontalZoom(zoom.factor, anchorTime, anchorX);
 }
 
 void ArrangementViewComponent::handleVerticalZoomWheel(float deltaY, bool keepViewportCentre)

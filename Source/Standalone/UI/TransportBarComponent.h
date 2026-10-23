@@ -135,6 +135,7 @@ private:
 enum class RecordButtonState
 {
     Idle = 0,
+    Armed,
     Capturing,
     Processing
 };
@@ -145,7 +146,8 @@ public:
     enum class LayoutProfile
     {
         StandaloneFull,
-        VST3AraSingleClip
+        VST3AraSingleClip,
+        ExternalEdit
     };
 
     /** TransportBar 内部三档。用户不可见、不保存：resized() 按实际宽度一次性决定。 */
@@ -170,6 +172,7 @@ public:
         juce::Rectangle<int> trackViewButton, pianoViewButton;
         juce::Rectangle<int> timeDisplay, bpmField, tapButton;
         juce::Rectangle<int> scaleRootSelector, scaleTypeSelector;
+        juce::Rectangle<int> externalEditButton, saveAndReturnButton;
     };
 
     /** 唯一的档位选择与布局计算规则，resized() 与自检共用。 */
@@ -188,6 +191,8 @@ public:
         virtual void scaleChanged(int rootNote, int scaleType) = 0;
         virtual void viewToggled(bool workspaceView) = 0;
         virtual void recordRequested() {}
+        virtual void externalEditRequested() {}
+        virtual void saveAndReturnRequested() {}
     };
 
     // Callback functions for Menu requests (File/Edit/View)
@@ -293,6 +298,8 @@ private:
     // Scale controls
     a11y::AccessibleComboBox scaleRootSelector_;
     a11y::AccessibleComboBox scaleTypeSelector_;
+    juce::TextButton externalEditButton_;
+    juce::TextButton saveAndReturnButton_;
 
     // State
     bool isPlaying_ = false;
