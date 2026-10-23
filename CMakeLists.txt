@@ -615,8 +615,6 @@ set(OPENTUNE_COMMON_SOURCES
         Source/Inference/FCPEExtractor.h
         Source/Inference/PCNSFHifiGANVocoder.cpp
         Source/Inference/PCNSFHifiGANVocoder.h
-        Source/Inference/GameNoteGenerator.cpp
-        Source/Inference/GameNoteGenerator.h
         Source/Inference/ModelFactory.cpp
         Source/Inference/ModelFactory.h
         Source/Inference/F0InferenceService.cpp
@@ -707,7 +705,6 @@ set(OPENTUNE_COMMON_SOURCES
         Source/Utils/LegacyNoteGenerator.cpp
         Source/Utils/LegacyNoteGenerator.h
         Source/Utils/NoteGeneratorTypes.h
-        Source/Inference/INoteGenerator.h
         Source/Utils/PianoKeyAudition.cpp
         Source/Utils/PianoKeyAudition.h
         Source/Utils/NoteAudition.cpp
@@ -721,6 +718,9 @@ set(OPENTUNE_COMMON_SOURCES
         Source/Utils/ContextMenuKey.h
         Source/Utils/AppLogger.cpp
         Source/Utils/AppLogger.h
+        Source/Utils/ExternalEditSession.cpp
+        Source/Utils/ExternalEditSession.h
+        Source/Utils/ExternalEditLaunch.h
         Source/Utils/EditorUiSync.h
         Source/Utils/ChannelLayoutLogger.cpp
         Source/Utils/ChannelLayoutLogger.h
@@ -831,8 +831,6 @@ set(OPENTUNE_STANDALONE_SOURCES
         Source/StandaloneArrangement.cpp
         Source/StandaloneArrangement.h
 
-        Source/DSP/ReferenceAutoAlign.cpp
-        Source/DSP/ReferenceAutoAlign.h
 
         Source/Utils/ProjectModel.cpp
         Source/Utils/ProjectModel.h
@@ -1202,38 +1200,6 @@ endif()
 # 社区声码器权重（默认）
 set(HIFIGAN_MODEL_COMMUNITY "${CMAKE_CURRENT_SOURCE_DIR}/pc_nsf_hifigan_44.1k_ONNX/pc_nsf_hifigan_44.1k_hop512_128bin_2025.02.onnx")
 set(FCPE_MODEL              "${CMAKE_CURRENT_SOURCE_DIR}/models/fcpe.onnx")
-set(GAME_MODEL_DIR          "${CMAKE_CURRENT_SOURCE_DIR}/models/GAME")
-
-if(EXISTS "${GAME_MODEL_DIR}")
-    message(STATUS "GAME note generator model bundle found: ${GAME_MODEL_DIR}")
-    set(STANDALONE_GAME_MODEL_COPY_COMMANDS
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${GAME_MODEL_DIR}"
-            "$<TARGET_FILE_DIR:OpenTuneStandalone_Standalone>/models/GAME"
-    )
-    set(STANDALONE_APPLE_GAME_MODEL_COPY_COMMANDS
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${GAME_MODEL_DIR}"
-            "$<TARGET_BUNDLE_DIR:OpenTuneStandalone_Standalone>/Contents/Resources/models/GAME"
-    )
-    set(VST3_GAME_MODEL_COPY_COMMANDS
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${GAME_MODEL_DIR}"
-            "$<TARGET_FILE_DIR:OpenTune_VST3>/models/GAME"
-    )
-    set(VST3_APPLE_GAME_MODEL_COPY_COMMANDS
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${GAME_MODEL_DIR}"
-            "$<TARGET_BUNDLE_DIR:OpenTune_VST3>/Contents/Resources/models/GAME"
-    )
-    set(AU_APPLE_GAME_MODEL_COPY_COMMANDS
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${GAME_MODEL_DIR}"
-            "$<TARGET_BUNDLE_DIR:OpenTuneAU_AU>/Contents/Resources/models/GAME"
-    )
-else()
-    message(STATUS "Optional GAME note generator model bundle not found at ${GAME_MODEL_DIR}; Standalone/VST3/AU packages will omit models/GAME and use Legacy fallback.")
-endif()
 
 # --- ONNX Runtime library copying ---
 if(WIN32)
@@ -1267,6 +1233,8 @@ if(WIN32)
     )
 
     add_custom_command(TARGET OpenTuneStandalone_Standalone POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -rf
+            "$<TARGET_FILE_DIR:OpenTuneStandalone_Standalone>/models/GAME"
         COMMAND ${CMAKE_COMMAND} -E make_directory
             "$<TARGET_FILE_DIR:OpenTuneStandalone_Standalone>/models"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -1275,7 +1243,6 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${FCPE_MODEL}"
             "$<TARGET_FILE_DIR:OpenTuneStandalone_Standalone>/models/fcpe.onnx"
-        ${STANDALONE_GAME_MODEL_COPY_COMMANDS}
         COMMENT "Copying AI models to Standalone..."
     )
 
@@ -1294,6 +1261,8 @@ elseif(APPLE)
     )
 
     add_custom_command(TARGET OpenTuneStandalone_Standalone POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -rf
+            "$<TARGET_BUNDLE_DIR:OpenTuneStandalone_Standalone>/Contents/Resources/models/GAME"
         COMMAND ${CMAKE_COMMAND} -E make_directory
             "$<TARGET_BUNDLE_DIR:OpenTuneStandalone_Standalone>/Contents/Resources/models"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -1302,7 +1271,6 @@ elseif(APPLE)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${FCPE_MODEL}"
             "$<TARGET_BUNDLE_DIR:OpenTuneStandalone_Standalone>/Contents/Resources/models/fcpe.onnx"
-        ${STANDALONE_APPLE_GAME_MODEL_COPY_COMMANDS}
         COMMENT "Copying AI models to app bundle Resources..."
     )
 endif()
@@ -1371,6 +1339,8 @@ if(APPLE AND TARGET OpenTuneAU_AU)
     )
 
     add_custom_command(TARGET OpenTuneAU_AU POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -rf
+            "$<TARGET_BUNDLE_DIR:OpenTuneAU_AU>/Contents/Resources/models/GAME"
         COMMAND ${CMAKE_COMMAND} -E make_directory
             "$<TARGET_BUNDLE_DIR:OpenTuneAU_AU>/Contents/Resources/models"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -1379,7 +1349,6 @@ if(APPLE AND TARGET OpenTuneAU_AU)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${FCPE_MODEL}"
             "$<TARGET_BUNDLE_DIR:OpenTuneAU_AU>/Contents/Resources/models/fcpe.onnx"
-        ${AU_APPLE_GAME_MODEL_COPY_COMMANDS}
         COMMENT "Copying AI models to AU component Resources..."
     )
 
@@ -1434,6 +1403,8 @@ if(TARGET OpenTune_VST3)
 
         # AI Models (alongside the .vst3)
         add_custom_command(TARGET OpenTune_VST3 POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E rm -rf
+                "$<TARGET_FILE_DIR:OpenTune_VST3>/models/GAME"
             COMMAND ${CMAKE_COMMAND} -E make_directory
                 "$<TARGET_FILE_DIR:OpenTune_VST3>/models"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -1442,7 +1413,6 @@ if(TARGET OpenTune_VST3)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${FCPE_MODEL}"
                 "$<TARGET_FILE_DIR:OpenTune_VST3>/models/fcpe.onnx"
-            ${VST3_GAME_MODEL_COPY_COMMANDS}
             COMMENT "Copying AI models to VST3 plugin..."
         )
 
@@ -1463,6 +1433,8 @@ if(TARGET OpenTune_VST3)
 
         # AI Models → Contents/Resources/models/
         add_custom_command(TARGET OpenTune_VST3 POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E rm -rf
+                "$<TARGET_BUNDLE_DIR:OpenTune_VST3>/Contents/Resources/models/GAME"
             COMMAND ${CMAKE_COMMAND} -E make_directory
                 "$<TARGET_BUNDLE_DIR:OpenTune_VST3>/Contents/Resources/models"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -1471,7 +1443,6 @@ if(TARGET OpenTune_VST3)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${FCPE_MODEL}"
                 "$<TARGET_BUNDLE_DIR:OpenTune_VST3>/Contents/Resources/models/fcpe.onnx"
-            ${VST3_APPLE_GAME_MODEL_COPY_COMMANDS}
             COMMENT "Copying AI models to VST3 bundle Resources..."
         )
 
@@ -1784,6 +1755,26 @@ if(OPENTUNE_BUILD_TESTS)
     endif()
     add_test(NAME NoteSpeechTests COMMAND OpenTuneNoteSpeechTests)
 
+    add_executable(OpenTuneHostTransportTests
+        Tests/HostTransportTests.cpp
+    )
+    target_include_directories(OpenTuneHostTransportTests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+    if(MSVC)
+        target_compile_options(OpenTuneHostTransportTests PRIVATE /utf-8 /EHsc)
+    endif()
+    add_test(NAME HostTransportTests COMMAND OpenTuneHostTransportTests)
+
+    add_executable(OpenTuneViewCapturePlanTests
+        Tests/ViewCapturePlanTests.cpp
+    )
+    target_include_directories(OpenTuneViewCapturePlanTests
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+    if(MSVC)
+        target_compile_options(OpenTuneViewCapturePlanTests PRIVATE /utf-8 /EHsc)
+    endif()
+    add_test(NAME ViewCapturePlanTests COMMAND OpenTuneViewCapturePlanTests)
+
     # Arrangement composite cache keeps independent per-tile, per-layer generations.
     add_executable(OpenTuneTimelineCompositeCacheTests
         Tests/TimelineCompositeCacheTests.cpp
@@ -1921,6 +1912,7 @@ if(OPENTUNE_BUILD_TESTS)
     # providing test doubles for the render backends.
     foreach(render_contract IN ITEMS
             RenderRuntimeLifecycleTests
+            RenderRuntimeDeferredRetryTests
             RenderRuntimeBackpressureTests
             RenderRuntimeStressTests
             ARALifecycleContractTests
@@ -1963,6 +1955,10 @@ if(OPENTUNE_BUILD_TESTS)
         endif()
     endforeach()
 
+    # Deferred retry contracts exercise more than one hundred cache entries and
+    # deliberately run outside the short Lifecycle watchdog scenarios.
+    set_tests_properties(RenderRuntimeDeferredRetryTests PROPERTIES TIMEOUT 120)
+
     # Performance is only a test when the user-provided baseline/threshold
     # contract exists.  A placeholder executable must not be reported as a
     # performance regression or silently pass without approved parameters.
@@ -1985,7 +1981,10 @@ if(OPENTUNE_BUILD_TESTS)
     # Linking the production SharedCode into the runtime lifecycle tests pulls
     # the JUCE ARA model object implementations.  Keep the SDK plug-in side
     # dispatch test-only, just as for the dedicated ARA host harness.
-    foreach(_runtime_contract IN ITEMS RenderRuntimeLifecycleTests RenderRuntimeStressTests)
+    foreach(_runtime_contract IN ITEMS
+            RenderRuntimeLifecycleTests
+            RenderRuntimeDeferredRetryTests
+            RenderRuntimeStressTests)
         target_sources(${_runtime_contract} PRIVATE
             "${ARA_SDK_PATH}/ARA_Library/Dispatch/ARAPlugInDispatch.cpp"
             "${ARA_SDK_PATH}/ARA_Library/PlugIn/ARAPlug.cpp"

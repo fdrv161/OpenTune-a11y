@@ -35,6 +35,7 @@
 #include "Editor/AutoRenderOverlayComponent.h"
 #include "../Editor/RenderBadgeComponent.h"
 #include "Utils/PitchShiftSettings.h"
+#include "Utils/ExternalEditSession.h"
 #include "Utils/AppPreferences.h"
 #include "Utils/CursorTheme.h"
 #include "Utils/TimelineDisplayMode.h"
@@ -128,6 +129,7 @@ public:
     void timeSignatureChanged(int numerator, int denominator) override;
     void scaleChanged(int rootNote, int scaleType) override;
     void viewToggled(bool workspaceView) override;
+    void saveAndReturnRequested() override;
 
     // TrackPanelComponent::Listener
     void trackSelected(int trackId) override;
@@ -148,7 +150,6 @@ public:
     void placementTimingChanged(int trackId, int placementIndex) override;
     void placementDoubleClicked(int trackId, int placementIndex) override;
     void verticalScrollChanged(int newOffset) override;
-    void referenceButtonClicked(int trackId, uint64_t placementId, juce::Rectangle<int> buttonScreenArea) override;
 
     void scrollModeChanged(bool isContinuous) override;
     void timelineDisplayModeChanged(TimelineDisplayMode mode) override;
@@ -173,16 +174,6 @@ public:
 
 private:
     struct PendingImport;
-    struct AutoRefUiState
-    {
-        OpenTuneAudioProcessor::AutoRefAvailability availability;
-        ParameterPanel::AutoButtonPresentation presentation;
-
-        bool shouldRunReferenceAuto() const noexcept
-        {
-            return availability.canRunAutoRef();
-        }
-    };
 
     bool shouldAcceptUndoRedoShortcut();
     void performUndoRedoAction(bool isUndo);
@@ -193,12 +184,6 @@ private:
     void applyResolvedScaleForPlacementContent(int trackId, int placementIndex);
     void syncPianoRollFromPlacementSelection(int trackId, int placementIndex);
     void applyPlacementSelectionContext(int trackId, uint64_t placementId);
-
-    // Reference auto-align methods
-    AutoRefUiState evaluateAutoRefUiState() const;
-    void refreshReferenceContext();
-    void resolveReferenceBindingMenu(int trackId, uint64_t placementId, juce::Rectangle<int> buttonScreenArea = {});
-    bool handleAutoRefExecute();
 
     void timerCallback() override;
     // §7.3：心跳对比 Processor uiZoom（唯一真相），不同则重设 transform 与 resize limits。
@@ -296,6 +281,10 @@ private:
     int nextImportBatchId_{1};
 
     bool isWorkspaceView_ = true;
+    bool externalEditActive_ = false;
+    juce::File externalEditSessionDir_;
+    std::optional<ExternalEditDocument> externalEditDocument_;
+    void beginExternalEditSession();
 
     // 现代布局：左右面板可折叠（用于“沉浸主画布”模式）
     bool isTrackPanelVisible_ = true;
@@ -317,7 +306,7 @@ private:
     std::shared_ptr<const PitchCurveSnapshot> lastPianoRollCurve_;
     std::shared_ptr<const juce::AudioBuffer<float>> lastPianoRollBuffer_;
     // Notes-revision tracking so the timer can pull fresh notes when an
-    // async note generator (GAME) commits to the active content
+    // async note generator commits to the active content
     // without changing ContentKey / curve / buffer.
     uint64_t lastPianoRollNotesRevision_ = 0;
     uint64_t lastPianoRollTimeGridRevision_ = 0;
@@ -326,9 +315,7 @@ private:
     int lastSyncedTimeSigNum_ = 0;
     int lastSyncedTimeSigDenom_ = 0;
     TimelineDisplayMode timelineDisplayMode_ = TimelineDisplayMode::Time;
-    ExperimentalReferenceAlignMode appliedReferenceAlignMode_ = ExperimentalReferenceAlignMode::StandardAuto;
     bool appliedExperimentalFeaturesEnabled_ = false;
-    bool referenceRefreshPending_ = false;
     AudioEditingScheme::Scheme appliedAudioEditingScheme_ = AudioEditingScheme::Scheme::CorrectedF0Primary;
 #if JUCE_DEBUG
     int diagnosticHeartbeatCounter_ = 0;

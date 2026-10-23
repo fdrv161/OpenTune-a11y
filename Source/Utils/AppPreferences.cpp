@@ -26,7 +26,6 @@ constexpr const char* kStandaloneCursorStyleKey = "standalone.cursorStyle";
 constexpr const char* kSharedRenderingPriorityKey = "shared.rendering.priority";
 constexpr const char* kSharedVocoderWeightKey = "shared.rendering.vocoderWeight";
 constexpr const char* kSharedExperimentalFeaturesEnabledKey = "shared.features.experimentalEnabled";
-constexpr const char* kSharedExperimentalReferenceAlignKey = "shared.align.experimental";
 constexpr const char* kSharedRecentProjectsKey = "shared.recentProjects";
 constexpr const char* kSharedSnapEnabledKey = "shared.snap.enabled";
 constexpr const char* kSharedSnapModeKey = "shared.snap.mode";
@@ -44,10 +43,11 @@ constexpr const char* kSharedOnboardingShownKey = "shared.onboardingShown";
 constexpr const char* kPluginEditorSizeKey = "defaultSize";
 constexpr const char* kShortcutSchemaVersionKey = "shared.shortcuts.schemaVersion";
 constexpr int kShortcutMouseSchemaVersion = 1;
-constexpr int kShortcutMacDefaultsSchemaVersion = 2;
-// 3: Pitch Modulation / Pitch Drift got default keys F3 / F5 (Windows).
-constexpr int kShortcutModDriftKeysSchemaVersion = 3;
-constexpr int kShortcutSchemaVersion = 3;
+constexpr int kShortcutMacModifierSchemaVersion = 2;
+constexpr int kShortcutMacSpacePlaySchemaVersion = 3;
+// 4: Pitch Modulation / Pitch Drift got default keys F3 / F5 (Windows).
+constexpr int kShortcutModDriftKeysSchemaVersion = 4;
+constexpr int kShortcutSchemaVersion = 4;
 
 juce::File resolveSettingsDirectory(const AppPreferences::StorageOptions& storageOptions)
 {
@@ -248,23 +248,6 @@ static F0ModelType fromF0ModelTypeToken(const juce::String& token)
     return F0ModelType::FCPE;
 }
 
-static juce::String toExperimentalRefAlignModeToken(ExperimentalReferenceAlignMode mode)
-{
-    switch (mode) {
-        case ExperimentalReferenceAlignMode::StandardAuto: return "standard-auto";
-        case ExperimentalReferenceAlignMode::Game:         return "game";
-    }
-    return "standard-auto";
-}
-
-static ExperimentalReferenceAlignMode fromExperimentalRefAlignModeToken(const juce::String& token)
-{
-    if (token == "game") {
-        return ExperimentalReferenceAlignMode::Game;
-    }
-    return ExperimentalReferenceAlignMode::StandardAuto;
-}
-
 const char* toTrackColorModeToken(TrackColorMode mode)
 {
     switch (mode) {
@@ -286,7 +269,8 @@ KeyShortcutConfig::KeyShortcutSettings decodeShortcutSettings(const juce::Proper
     const int storedSchemaVersion = properties.getIntValue(kShortcutSchemaVersionKey, 0);
     const bool migrateMouseDefaults = storedSchemaVersion < kShortcutMouseSchemaVersion;
 #if JUCE_MAC
-    const bool migrateMacDefaultShortcuts = storedSchemaVersion < kShortcutMacDefaultsSchemaVersion;
+    const bool migrateMacDefaultShortcuts = storedSchemaVersion < kShortcutMacModifierSchemaVersion;
+    const bool restoreMacSpacePlay = storedSchemaVersion < kShortcutMacSpacePlaySchemaVersion;
 #endif
     // Modulation and drift used to have no keys, so settings stored an empty string.
     // Do not treat it as a user choice; adopt the new F3 / F5.
@@ -352,6 +336,17 @@ KeyShortcutConfig::KeyShortcutSettings decodeShortcutSettings(const juce::Proper
                 else if (info.id == KeyShortcutConfig::ShortcutId::ZoomVerticalOut)
                     replaceBinding({ juce::KeyPress::downKey, zoomModifiers },
                                    { juce::KeyPress::downKey, transportModifiers });
+            }
+            if (restoreMacSpacePlay && info.id == KeyShortcutConfig::ShortcutId::PlayPause) {
+                const auto previousDefault = juce::ModifierKeys::commandModifier
+                    | juce::ModifierKeys::altModifier
+                    | juce::ModifierKeys::shiftModifier;
+                const KeyShortcutConfig::KeyBinding previousPlay(
+                    juce::KeyPress::spaceKey, previousDefault);
+                if (decoded.hasBinding(previousPlay)) {
+                    decoded.removeBinding(previousPlay);
+                    decoded.addBinding({ juce::KeyPress::spaceKey, {} });
+                }
             }
 #endif
             settings.bindings[static_cast<size_t>(info.id)] = std::move(decoded);
@@ -454,9 +449,6 @@ AppPreferencesState loadStateFromProperties(const juce::PropertiesFile& properti
     state.shared.auditionAfterKeyboardEdit = properties.getBoolValue(
         kSharedAuditionAfterKeyboardEditKey,
         state.shared.auditionAfterKeyboardEdit);
-    state.shared.experimentalReferenceAlignMode = fromExperimentalRefAlignModeToken(
-        properties.getValue(kSharedExperimentalReferenceAlignKey,
-                            toExperimentalRefAlignModeToken(state.shared.experimentalReferenceAlignMode)));
     state.shared.snap.enabled = properties.getBoolValue(kSharedSnapEnabledKey, false);
     state.shared.snap.mode = static_cast<SnapSettings::Mode>(
         properties.getIntValue(kSharedSnapModeKey, static_cast<int>(SnapSettings::Mode::Off)));
@@ -526,8 +518,6 @@ void writeStateToProperties(juce::PropertiesFile& properties, const AppPreferenc
     properties.setValue(kSharedEqSuppressRemoveConfirmationKey,
                         state.shared.suppressEqRemoveConfirmation);
     properties.setValue(kSharedOnboardingShownKey, state.shared.onboardingShown);
-    properties.setValue(kSharedExperimentalReferenceAlignKey,
-                        toExperimentalRefAlignModeToken(state.shared.experimentalReferenceAlignMode));
     properties.setValue(kSharedSnapEnabledKey, state.shared.snap.enabled);
     properties.setValue(kSharedSnapModeKey, static_cast<int>(state.shared.snap.mode));
     properties.setValue(kSharedTrackColorModeKey, toTrackColorModeToken(state.shared.trackColorMode));
@@ -727,13 +717,6 @@ void AppPreferences::setExperimentalFeaturesEnabled(bool enabled)
 {
     const std::lock_guard<std::mutex> lock(mutex_);
     state_.shared.experimentalFeaturesEnabled = enabled;
-    saveLocked();
-}
-
-void AppPreferences::setExperimentalReferenceAlignMode(ExperimentalReferenceAlignMode mode)
-{
-    const std::lock_guard<std::mutex> lock(mutex_);
-    state_.shared.experimentalReferenceAlignMode = mode;
     saveLocked();
 }
 

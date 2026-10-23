@@ -106,9 +106,11 @@ public:
     void scaleChanged(int rootNote, int scaleType) override;
     void viewToggled(bool workspaceView) override;
     void recordRequested() override;
+    void externalEditRequested() override;
     void timelineDisplayModeChanged(TimelineDisplayMode mode) override;
 
     bool playheadPositionChangeRequested(double timeSeconds) override;
+    bool playheadPositionPreviewRequested(double timeSeconds) override;
     void playPauseToggleRequested() override;
     void stopPlaybackRequested() override;
     bool pointerShortcutRequested(KeyShortcutConfig::ShortcutId id) override;
@@ -210,7 +212,7 @@ private:
     bool renderBadgeWasShown_ = false;
     juce::uint32 renderStartedMs_ = 0;
     // Tracks last-seen notesRevision per active content so the timer
-    // can pull fresh notes when an async note generator (GAME) commits late.
+    // can pull fresh notes when an async note generator commits late.
     // Tracks last-seen ContentKey for revision baseline only (not session last-active).
     ContentKey lastRevisionObservedContentKey_;
     std::optional<PianoRollPlacementIdentity> presentedPlacementIdentity_;
@@ -227,6 +229,8 @@ private:
     std::shared_ptr<const juce::AudioBuffer<float>> lastPianoRollBuffer_;
     int lastPianoRollSampleRate_{0};
     PitchShiftSettings lastPitchShiftIndicatorSettings_;
+    juce::File externalEditSessionDir_;
+    ContentKey externalEditContentKey_;
 
     static constexpr int TOP_BAR_HEIGHT = 88;
     static constexpr int PARAMETER_PANEL_WIDTH = 240;

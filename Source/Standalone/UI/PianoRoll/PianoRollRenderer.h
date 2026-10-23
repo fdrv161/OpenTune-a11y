@@ -59,6 +59,7 @@ public:
         ContentTimelineProjection projection;
         std::shared_ptr<const TimeGridSnapshot> timeGrid;
         std::shared_ptr<const juce::AudioBuffer<float>> audioBuffer;
+        double audioSampleRate = 0.0;
         std::shared_ptr<const PitchCurveSnapshot> pitchSnapshot;
         F0Timeline f0Timeline;
         std::shared_ptr<const EditableContentSnapshot> ownerSnapshot;
@@ -71,19 +72,6 @@ public:
         {
             return contentKey.isValid() && projection.isValid() && static_cast<bool>(timeGrid);
         }
-    };
-
-    struct ReferenceOverlay
-    {
-        std::vector<Note> ghostNotes;               // reference content 的 derived notes（content-local source time）
-        float ghostOpacity{0.20f};                   // 透明度
-        juce::Colour ghostColour;                    // ghost 颜色（不同于当前轨）
-        bool enabled{false};                         // 是否启用 overlay
-
-        // source content → timeline 的投影值
-        ContentTimelineProjection sourceProjection;
-        // reference content 的 TimeGrid（source↔output 转换）
-        std::shared_ptr<const TimeGridSnapshot> timeGrid;
     };
 
     /// Render context — includes stable content state and transient UI fields.
@@ -143,8 +131,6 @@ public:
 
     // ⚡️ §8.5 — paint TimeGrid handles as vertical guide lines.
     void drawTimeGridHandles(juce::Graphics& g, const RenderContext& ctx, const ContentRenderItem& item);
-
-    void drawGhostNotes(juce::Graphics& g, const RenderContext& ctx, const ReferenceOverlay& overlay);
 
 
 };
