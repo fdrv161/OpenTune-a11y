@@ -106,6 +106,9 @@ private:
     void timerCallback() override;
     void commit();
     void cancelEdit();
+    // iPadOS 只为 TextInputTarget 弹出软键盘：编辑 BPM 时在数值区覆盖一个数字键盘 TextEditor。
+    void beginInlineEdit();
+    void finishInlineEdit(bool shouldCommit);
     void showNumeratorMenu();
     void showDenominatorMenu();
     juce::String formatBpmText() const;
@@ -129,13 +132,13 @@ private:
     int timeSigDenom_ = 4;
     bool readOnly_ = false;
     juce::String tooltip_;
+    std::unique_ptr<juce::TextEditor> inlineEditor_;
 };
 
 /** Record button visual states for non-ARA VST3 capture workflow. */
 enum class RecordButtonState
 {
     Idle = 0,
-    Armed,
     Capturing,
     Processing
 };
