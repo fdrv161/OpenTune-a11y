@@ -2,7 +2,6 @@
 #include "../Source/Utils/MagnifyZoom.h"
 #include "../Source/Utils/WaveformTime.h"
 #include "../Source/Utils/WheelPan.h"
-#include "../Source/Plugin/Capture/CaptureScanPlan.h"
 
 #include <cstdio>
 
@@ -26,36 +25,6 @@ static void testWheelPan()
 
     const auto notch = wheelEventToPixels(0.0f, 1.0f, false, 90.0f);
     check(notch.x == 0.0 && notch.y == 90.0, "a notched wheel uses the scroll speed setting");
-}
-
-static void testScanPlan()
-{
-    using namespace OpenTune::Capture;
-    HostSampleRange covered[] = { { 100, 50 }, { 0, 0 }, { 180, 40 } };
-    BlockSampleRun runs[4];
-    const int count = collectUncoveredRuns(80, 160, covered, 3, runs, 4);
-    check(count == 3, "a block keeps the gaps around already scanned audio");
-    check(runs[0].blockOffset == 0 && runs[0].sampleCount == 20, "audio before a scanned range is captured");
-    check(runs[1].blockOffset == 70 && runs[1].sampleCount == 30, "the gap between scanned ranges is captured");
-    check(runs[2].blockOffset == 140 && runs[2].sampleCount == 20, "audio after the last scanned range is captured");
-
-    ScanTransportInput armed;
-    armed.scanArmed = true;
-    armed.hostPlaying = true;
-    check(decideScanTransport(armed) == ScanTransportAction::Arm, "playback of new audio starts a scan");
-
-    armed.positionCovered = true;
-    check(decideScanTransport(armed) == ScanTransportAction::Hold, "already scanned audio is not captured again");
-
-    ScanTransportInput capturing;
-    capturing.scanArmed = true;
-    capturing.hostPlaying = false;
-    capturing.capturing = true;
-    check(decideScanTransport(capturing) == ScanTransportAction::Stop, "stopping the DAW ends the current take");
-
-    ScanTransportInput disarmed;
-    disarmed.hostPlaying = true;
-    check(decideScanTransport(disarmed) == ScanTransportAction::Hold, "a disarmed scan stays idle");
 }
 
 static void testMagnifyZoom()
@@ -109,7 +78,6 @@ int main()
     testWheelPan();
     testMagnifyZoom();
     testWaveformTime();
-    testScanPlan();
     testExternalEditLaunch();
     if (failures == 0) {
         std::puts("All view and capture plan tests passed.");

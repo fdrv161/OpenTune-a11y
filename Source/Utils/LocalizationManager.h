@@ -250,6 +250,7 @@ constexpr const char* kAudioNoOutputChannels = "No output channels available";
 constexpr const char* kAudioChannel = "Channel {0}";
 constexpr const char* kAudioDeviceError = "Audio device error";
 constexpr const char* kAudioDeviceSwitchFailed = "Failed to switch audio device";
+constexpr const char* kAudioDeviceRestoreWarning = "ASIO sample rate restore failed; the switch continued.";
 constexpr const char* kEditing = "Editing";
 constexpr const char* kMouse = "Mouse";
 constexpr const char* kShortcuts = "Shortcuts";
@@ -464,6 +465,7 @@ constexpr const char* kEraser = "Eraser";
         constexpr const char* kOnboarding = "Onboarding...";
         constexpr const char* kReplayOnboarding = "Replay onboarding";
         constexpr const char* kUserGuide = "User Guide...";
+        constexpr const char* kAbout = "About OpenTune";
 
 constexpr const char* kMouseSelectTool = "Mouse Select Tool";
 constexpr const char* kDrawNoteTool = "Draw Note Tool";
@@ -598,6 +600,7 @@ inline juce::String get(Language lang, const char* key)
         { Keys::kAudioChannel, "Channel {0}", "通道 {0}", "チャンネル {0}", "Канал {0}", "Canal {0}" },
         { Keys::kAudioDeviceError, "Audio device error", "音频设备错误", "オーディオデバイスエラー", "Ошибка аудиоустройства", "Error del dispositivo de audio" },
         { Keys::kAudioDeviceSwitchFailed, "Failed to switch audio device", "音频设备切换失败", "オーディオデバイスの切り替えに失敗しました", "Не удалось переключить аудиоустройство", "Error al cambiar el dispositivo de audio" },
+        { Keys::kAudioDeviceRestoreWarning, "ASIO sample rate restore failed; the switch continued.", "ASIO 采样率恢复失败，已继续切换。", "ASIO のサンプルレート復元に失敗しました。切り替えは続行しました。", "Не удалось восстановить частоту ASIO; переключение продолжено.", "No se pudo restaurar la frecuencia de ASIO; el cambio continuó." },
         { Keys::kEditing, "Editing", "编辑", "編集", "Редактирование", "Edicion" },
         { Keys::kMouse, "Mouse", "鼠标", "マウス", "Мышь", "Ratón" },
         { Keys::kShortcuts, "Shortcuts", "快捷键", "ショートカット", "Сочетания клавиш", "Atajos de teclado" },
@@ -766,6 +769,7 @@ inline juce::String get(Language lang, const char* key)
         { Keys::kHelp, "Help...", "帮助...", "ヘルプ...", "Справка...", "Ayuda..." },
         { Keys::kOnboarding, "Onboarding...", "上手引导...", "オンボーディング...", "Введение...", "Introducción..." },
         { Keys::kReplayOnboarding, "Replay onboarding", "重新进入上手引导", "オンボーディングを再表示", "Повторить обучение", "Repetir introducción" },
+        { Keys::kAbout, "About OpenTune", "关于", "OpenTune について", "О программе", "Acerca de OpenTune" },
         { Keys::kUserGuide, "User Guide...", "用户手册...", "ユーザーガイド...", "Руководство пользователя...", "Manual de usuario..." },
         
         { Keys::kMouseSelectTool, "Mouse Select Tool", "鼠标选择工具", "マウス選択ツール", "Инструмент выбора", "Herram. selec." },
@@ -1071,6 +1075,8 @@ inline juce::String get(Language lang, const char* key)
         { "Save changes to the current project before opening another?", "Save changes to the current project before opening another?", "打开其他工程前，是否保存当前工程的更改？", "別のプロジェクトを開く前に、現在の変更を保存しますか？", "Сохранить изменения текущего проекта перед открытием другого?", "¿Guardar los cambios del proyecto actual antes de abrir otro?" },
         { "Save", "Save", "保存", "保存", "Сохранить", "Guardar" },
         { "Do Not Save", "Do Not Save", "不保存", "保存しない", "Не сохранять", "No guardar" },
+        { "File name", "File name", "文件名", "ファイル名", "Имя файла", "Nombre de archivo" },
+        { "These files could not be copied into OpenTune:", "These files could not be copied into OpenTune:", "以下文件无法复制到 OpenTune：", "次のファイルを OpenTune にコピーできませんでした：", "Не удалось скопировать эти файлы в OpenTune:", "No se pudieron copiar estos archivos a OpenTune:" },
     };
     
     for (const auto& t : translations)
