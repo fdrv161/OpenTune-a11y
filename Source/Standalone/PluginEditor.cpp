@@ -57,12 +57,13 @@ namespace {
 constexpr int kHeartbeatHzIdle = 30;
 constexpr int kHeartbeatHzInferenceActive = 10;
 
-// 100% 基线窗口尺寸（§4.4）：min 900×500，max 固定 3000×2000，preferred 1200×900。
+// 100% 基线窗口尺寸（§4.4）：min 900×500，max 8192×4096（覆盖 4K/5K 显示器工作区，
+// 最大化不再被旧上限 3000×2000 卡住），preferred 1200×900。
 // 实际外层窗口尺寸在挂入默认 StandaloneFilterWindow 后按 settings 恢复/约束（§5.1）。
 constexpr int kBaseMinWidth = 900;
 constexpr int kBaseMinHeight = 500;
-constexpr int kMaxWindowWidth = 3000;
-constexpr int kMaxWindowHeight = 2000;
+constexpr int kMaxWindowWidth = 8192;
+constexpr int kMaxWindowHeight = 4096;
 constexpr int kPreferredWidth = 1200;
 constexpr int kPreferredHeight = 900;
 
@@ -873,7 +874,11 @@ OpenTuneAudioProcessorEditor::~OpenTuneAudioProcessorEditor()
                 props->setValue("windowHeight", window->getHeight());
             }
 
+        AppLogger::log("ShutdownDiag: restoreAsioSampleRateToSystem begin");
+        const auto restoreStart = juce::Time::getMillisecondCounter();
         restoreAsioSampleRateToSystem(holder->deviceManager, "editor exit");
+        AppLogger::log("ShutdownDiag: restoreAsioSampleRateToSystem elapsedMs="
+            + juce::String(juce::Time::getMillisecondCounter() - restoreStart));
     }
 
     // Stop timer
@@ -886,15 +891,39 @@ OpenTuneAudioProcessorEditor::~OpenTuneAudioProcessorEditor()
 
     // Ensure import/deferred background tasks are fully completed
     // before tearing down UI/listeners to avoid lifetime races.
+    const auto backgroundTaskCount = backgroundTasks_.size();
+    AppLogger::log("ShutdownDiag: waitForBackgroundUiTasks begin futureCount="
+        + juce::String(static_cast<int>(backgroundTaskCount)));
+    const auto backgroundTasksStart = juce::Time::getMillisecondCounter();
     waitForBackgroundUiTasks();
+    AppLogger::log("ShutdownDiag: waitForBackgroundUiTasks futureCount="
+        + juce::String(static_cast<int>(backgroundTaskCount))
+        + " elapsedMs=" + juce::String(juce::Time::getMillisecondCounter() - backgroundTasksStart));
 
     // Safely join export worker thread if it exists
+    const auto exportJoinable = exportWorker_.joinable();
+    const auto exportInProgress = exportInProgress_.load();
+    AppLogger::log("ShutdownDiag: exportThreadJoin begin joinable="
+        + juce::String(exportJoinable ? "true" : "false")
+        + " exportInProgress=" + juce::String(exportInProgress ? "true" : "false"));
+    const auto exportJoinStart = juce::Time::getMillisecondCounter();
     if (exportWorker_.joinable())
     {
         exportWorker_.join();
     }
+    AppLogger::log("ShutdownDiag: exportThreadJoin joinable="
+        + juce::String(exportJoinable ? "true" : "false")
+        + " exportInProgress=" + juce::String(exportInProgress ? "true" : "false")
+        + " elapsedMs=" + juce::String(juce::Time::getMillisecondCounter() - exportJoinStart));
 
+    const auto projectJobCount = projectWorkerPool_.getNumJobs();
+    AppLogger::log("ShutdownDiag: projectWorkerPool.removeAllJobs begin jobCount="
+        + juce::String(projectJobCount));
+    const auto projectJobsStart = juce::Time::getMillisecondCounter();
     projectWorkerPool_.removeAllJobs(false, -1);
+    AppLogger::log("ShutdownDiag: projectWorkerPool.removeAllJobs jobCount="
+        + juce::String(projectJobCount)
+        + " elapsedMs=" + juce::String(juce::Time::getMillisecondCounter() - projectJobsStart));
 
     // Remove custom LookAndFeel
     setLookAndFeel(nullptr);

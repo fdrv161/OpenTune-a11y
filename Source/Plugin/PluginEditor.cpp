@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <set>
 
 #include "Editor/ConfirmDialogContent.h"
 #include "Editor/AboutDialogContent.h"
@@ -90,22 +91,7 @@ ContentKey chooseActiveCaptureContentKey(Capture::CaptureSession& session,
 }
 
 #if JucePlugin_Enable_ARA
-ContentTimelineProjection makePianoRollLocalProjection(
-    const OpenTuneAudioProcessor& processor,
-    const OpenTuneDocumentController::PlaybackRegionProjection& region)
-{
-    const auto snapshot = processor.getContentSnapshot(region.contentKey);
-    if (snapshot == nullptr)
-        return {};
 
-    ContentTimelineProjection projection;
-    projection.timelineStartSeconds = region.startInPlaybackTime;
-    projection.timelineDurationSeconds = region.durationInPlaybackTime;
-    projection.contentStartSeconds = region.startInModificationTime
-        - snapshot->sourceWindow.sourceStartSeconds;
-    projection.contentDurationSeconds = region.durationInModificationTime;
-    return projection;
-}
 #endif
 
 } // anonymous namespace
@@ -163,20 +149,10 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
     transportBar_.setLayoutProfile(TransportBarComponent::LayoutProfile::VST3AraSingleClip);
 
     // Sync initial record button state for ARA mode.
-    // Button is available once ARA is bound + at least one PlaybackRegion exists;
-    // it does NOT wait for notifySelection (ARA spec: selection is a loose hint,
-    // not a completion signal).
-    if (!processorRef_.getCaptureSession()) {
-        auto* editorView = getARAEditorView();
-        if (editorView != nullptr) {
-            auto& selection = editorView->getViewSelection();
-            auto playbackRegions = selection.getEffectivePlaybackRegions<juce::ARAPlaybackRegion>();
-            processorRef_.getDocumentController()->setEditorViewSelectionPlaybackRegions(std::move(playbackRegions));
-        }
-        const auto* dc = processorRef_.getDocumentController();
-        transportBar_.setRecordButtonEnabled(dc != nullptr
-            && !dc->getEditorSelectionPlaybackRegionProjections().empty());
-    }
+    // Button is available once the instance's content scope is non-empty
+    // (assigned playback regions, or the editor view's own selection).
+    if (!processorRef_.getCaptureSession())
+        transportBar_.setRecordButtonEnabled(!resolveContentScopeRegions().empty());
 
     // Sync initial transport state from processor
     transportBar_.setPlaying(processorRef_.isPlaying());
@@ -283,7 +259,7 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
     pianoRoll_.setProcessor(&processorRef_);
     pianoRoll_.setContentCommands(contentCommands_);
     pianoRoll_.setReadContentSnapshot([this](ContentKey key) {
-        return processorRef_.getContentSnapshot(key);
+        return readContentSnapshot(key);
     });
     // EQ popup「以后不再提示」偏好直接注入（无中转层）
     pianoRoll_.setAppPreferences(&appPreferences_);
@@ -305,6 +281,10 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
     contentRoot_.addChildComponent(*onboardingOverlay_);
 
     startTimerHz(kHeartbeatHz);
+    // Host transport metadata (BPM/time signature): applied on demand from the
+    // heartbeat when the processor's RT-safe generation counter moves; also
+    // synced once here for the initial state.
+    syncHostTransportMetadata();
 
     const auto f0Type = appPreferences_.getState().shared.f0ModelType;
     juce::String f0InitializationError;
@@ -341,8 +321,12 @@ OpenTuneAudioProcessorEditor::~OpenTuneAudioProcessorEditor()
     rememberPresentedPianoRollViewport();
     setLookAndFeel(nullptr);
     stopTimer();
-    overviewStrip_.removeListener(this);
-    LocalizationManager::getInstance().removeListener(this);
+#if JucePlugin_Enable_ARA
+    if (compositeKey_.isValid())
+        if (auto* dc = processorRef_.getDocumentController())
+            dc->removeCompositeContent(compositeKey_);
+#endif
+    overviewStrip_.removeListener(this);    LocalizationManager::getInstance().removeListener(this);
     menuBar_.removeListener(this);
     transportBar_.removeListener(this);
     parameterPanel_.removeListener(this);
@@ -393,6 +377,8 @@ void OpenTuneAudioProcessorEditor::resized()
 
     auto bounds = contentRoot_.getLocalBounds();
     constexpr int gap = 4;
+
+    maybeStartOnboarding();
 
     bounds.reduce(gap, gap);
 
@@ -447,6 +433,7 @@ void OpenTuneAudioProcessorEditor::visibilityChanged()
         lastSavedEditorSize_ = { getWidth(), getHeight() };
         editorSizePersistenceEnabled_ = true;
     }
+    maybeStartOnboarding();
 }
 
 void OpenTuneAudioProcessorEditor::mouseDown(const juce::MouseEvent& e)
@@ -523,20 +510,40 @@ void OpenTuneAudioProcessorEditor::applyUiZoomIfNeeded()
     repaint();
 }
 
+void OpenTuneAudioProcessorEditor::maybeStartOnboarding()
+{
+    if (onboardingOverlay_ == nullptr || onboardingOverlay_->isActive())
+        return;
+    if (appPreferences_.getState().shared.onboardingShown)
+        return;
+    if (!isShowing() || getPeer() == nullptr || getWidth() <= 0 || getHeight() <= 0)
+        return;
+    if (juce::ModalComponentManager::getInstance()->getNumModalComponents() != 0)
+        return;
+    if (originalF0OverlayLatched_)
+        return;
+    onboardingRequested();
+}
+
 void OpenTuneAudioProcessorEditor::timerCallback()
 {
     applyUiZoomIfNeeded();
 
-    syncSharedAppPreferences();
-
-    if (onboardingOverlay_ != nullptr && !onboardingOverlay_->isActive()
-        && !appPreferences_.getState().shared.onboardingShown
-        && isShowing() && getPeer() != nullptr && getWidth() > 0 && getHeight() > 0
-        && juce::ModalComponentManager::getInstance()->getNumModalComponents() == 0
-        && !originalF0OverlayLatched_)
-    {
-        onboardingRequested();
+#if !JucePlugin_Build_Standalone
+    // Host transport metadata (BPM/time signature): one acquire load.
+    // The audio thread bumps the generation counter on change (RT-safe, no
+    // message posting); UI refresh happens only when it moved. Acquire pairs
+    // with the release bump so the metadata stores are visible.
+    const uint32_t generation = processorRef_.getHostTransportMetadataGeneration();
+    if (generation != lastHostMetadataGeneration_) {
+        lastHostMetadataGeneration_ = generation;
+        syncHostTransportMetadata();
     }
+#endif
+
+    // Cheap predicate re-check: host may close modals without any editor-side
+    // hook (visibility/resized), so keep this as a fallback trigger.
+    maybeStartOnboarding();
 
     // Non-ARA capture state is driven by the processor's own Timer (tick()).
     // Editor only syncs UI state from the capture session.
@@ -581,15 +588,24 @@ void OpenTuneAudioProcessorEditor::timerCallback()
     const auto sync = syncContentProjectionToPianoRoll();
 
     // Regular VST3 capture is managed above via setRecordButtonState.
-    // ARA mode: button enabled once ARA bound + any PlaybackRegion exists
-    // (does NOT wait for notifySelection — ARA spec treats selection as a
-    // loose hint, not a readiness gate).
-    if (!sync.isRegularVst3Capture) {
-        const auto* dc = processorRef_.getDocumentController();
-        if (dc != nullptr)
-            transportBar_.setRecordButtonEnabled(
-                !dc->getEditorSelectionPlaybackRegionProjections().empty());
-    }
+    // ARA mode: button enabled once the instance's content scope has placements.
+    if (!sync.isRegularVst3Capture)
+        transportBar_.setRecordButtonEnabled(sync.hasPlacements());
+
+    // Per-tick snapshot cache: makeContentSnapshot copies notes/gaps/features,
+    // so repeated reads of the same ContentKey within one tick are expensive.
+    // All consumers below (overview sample rate, F0 state observation, revision
+    // detection, pitch-shift indicator, F0 overlay) share this cache.
+    std::map<ContentKey, std::shared_ptr<const EditableContentSnapshot>> tickSnapshotCache;
+    const auto getTickSnapshot = [this, &tickSnapshotCache](ContentKey key)
+        -> std::shared_ptr<const EditableContentSnapshot> {
+        auto it = tickSnapshotCache.find(key);
+        if (it != tickSnapshotCache.end())
+            return it->second;
+        auto snap = readContentSnapshot(key);
+        tickSnapshotCache.emplace(key, std::move(snap));
+        return tickSnapshotCache.find(key)->second;
+    };
 
     // Overview update: regular capture uses multi-segment overview path;
     // ARA/other paths continue using the single-content onHeartbeatTick.
@@ -599,7 +615,7 @@ void OpenTuneAudioProcessorEditor::timerCallback()
             std::vector<double> overviewSampleRates;
             overviewSampleRates.reserve(sync.placements.size());
             for (const auto& placement : sync.placements) {
-                const auto snap = processorRef_.getContentSnapshot(placement.contentKey);
+                const auto snap = getTickSnapshot(placement.contentKey);
                 overviewSampleRates.push_back(snap != nullptr ? snap->audioSampleRate : 0.0);
             }
             overviewStrip_.onHeartbeatTickRegular(sync.placements,
@@ -612,7 +628,7 @@ void OpenTuneAudioProcessorEditor::timerCallback()
         else
         {
             double overviewSampleRate = 0.0;
-            if (const auto snap = processorRef_.getContentSnapshot(pianoRoll_.editedContentKey()))
+            if (const auto snap = getTickSnapshot(pianoRoll_.editedContentKey()))
                 overviewSampleRate = snap->audioSampleRate;
             overviewStrip_.onHeartbeatTick(pianoRoll_.editedContentKey(),
                                            pianoRoll_.activeContentProjection(),
@@ -622,14 +638,17 @@ void OpenTuneAudioProcessorEditor::timerCallback()
         }
     }
 
-    // Continuously remember viewport for stable placement restore
-    rememberPresentedPianoRollViewport();
+    // Viewport save points: placement switch (syncContentProjectionToPianoRoll,
+    // before identity change) and editor destructor. No per-tick save needed —
+    // restore only ever reads at placement switch, right after the switch-time save.
 
     // Revision detection (aligned with Standalone pattern)
     const ContentKey activeKey = sync.activeContentKey;
+    std::set<ContentKey> observedF0Keys;
 
-    const auto observeOriginalF0State = [this](ContentKey contentKey) {
-        const auto snapshot = processorRef_.getContentSnapshot(contentKey);
+    const auto observeOriginalF0State = [this, &getTickSnapshot, &observedF0Keys](ContentKey contentKey) {
+        observedF0Keys.insert(contentKey);
+        const auto snapshot = getTickSnapshot(contentKey);
         const auto currentState = snapshot
             ? snapshot->originalF0State
             : OriginalF0State::NotRequested;
@@ -655,6 +674,17 @@ void OpenTuneAudioProcessorEditor::timerCallback()
     if (auto* session = processorRef_.getCaptureSession()) {
         for (const auto& segment : session->listSegments())
             observeOriginalF0State(segment.contentKey);
+    }
+
+    // Prune stale F0 observation state: keys no longer observed this tick were
+    // removed from every placement/segment list (or their content was
+    // destroyed) — their map entries would otherwise leak forever.
+    for (auto it = lastObservedOriginalF0States_.begin();
+         it != lastObservedOriginalF0States_.end();) {
+        if (observedF0Keys.count(it->first) != 0)
+            ++it;
+        else
+            it = lastObservedOriginalF0States_.erase(it);
     }
 
     auto f0FailureEvents = processorRef_.takeOriginalF0FailureEvents();
@@ -692,7 +722,7 @@ void OpenTuneAudioProcessorEditor::timerCallback()
 
         // 同步到当前 snapshot 的 revision baseline（与 Standalone 对齐）
         if (activeKey.isValid()) {
-            auto snap = processorRef_.getContentSnapshot(activeKey);
+            auto snap = getTickSnapshot(activeKey);
             lastPianoRollNotesRevision_ = snap ? snap->notesRevision : 0;
             lastPianoRollTimeGridRevision_ = snap ? snap->timeGridRevision : 0;
             lastPianoRollPitchRevision_ = snap ? snap->pitchRevision : 0;
@@ -705,7 +735,7 @@ void OpenTuneAudioProcessorEditor::timerCallback()
 
     // Revision 检测（只在有效 content 且未切换时执行）
     if (activeKey.isValid() && !contentJustSwitched) {
-        auto snap = processorRef_.getContentSnapshot(activeKey);
+        auto snap = getTickSnapshot(activeKey);
         const auto revisionPulse = resolveContentRevisionPulse(snap ? snap->notesRevision : 0,
                                                                snap ? snap->timeGridRevision : 0,
                                                                snap ? snap->pitchRevision : 0,
@@ -730,7 +760,7 @@ void OpenTuneAudioProcessorEditor::timerCallback()
     // Pitch shift indicator: single source of truth is active content snapshot
     PitchShiftSettings currentPitchShift = PitchShiftSettings::identity();
     if (activeKey.isValid()) {
-        if (auto snap = processorRef_.getContentSnapshot(activeKey))
+        if (auto snap = getTickSnapshot(activeKey))
             currentPitchShift = snap->pitchShiftSettings;
     }
     if (currentPitchShift != lastPitchShiftIndicatorSettings_) {
@@ -742,7 +772,7 @@ void OpenTuneAudioProcessorEditor::timerCallback()
     if (originalF0OverlayLatched_) {
         bool allDone = true;
         for (const auto& key : originalF0OverlayTargetContentKeys_) {
-            auto snap = processorRef_.getContentSnapshot(key);
+            auto snap = getTickSnapshot(key);
             if (snap == nullptr)
                 continue;  // content 已被移除，视为完成
             // AUTO 由 Read 意图在 F0 Ready 跳变时消费（唯一核心），
@@ -771,29 +801,21 @@ void OpenTuneAudioProcessorEditor::timerCallback()
 
             originalF0OverlayLatched_ = false;
             originalF0OverlayTargetContentKeys_.clear();
+            // F0 overlay no longer blocks onboarding; modal windows may still be
+            // open (the guard inside maybeStartOnboarding covers that).
+            maybeStartOnboarding();
         }
     }
 
-    bool shouldShowOverlay = false;
     bool shouldShowBadge = false;
     const auto chunkStats = processorRef_.getReadableContentChunkStats(activeKey);
-    const bool isAutoProcessing = false;
-    const int completedTasks = chunkStats.idle + chunkStats.blank;
-    const int totalTasks = chunkStats.total();
-
-    if (isAutoProcessing) {
-        const float progress = totalTasks > 0
-            ? static_cast<float>(completedTasks) / static_cast<float>(totalTasks)
-            : 0.0f;
-        autoRenderOverlay_.setMessageText(
-            buildRenderingOverlayTitle(completedTasks, totalTasks, progress));
-        shouldShowOverlay = true;
-    } else if (chunkStats.hasActiveWork()) {
+    if (chunkStats.hasActiveWork()) {
         renderBadge_.setMessageText(LOC_RAW("Rendering (")
-            + juce::String(completedTasks) + "/" + juce::String(totalTasks) + ")");
+            + juce::String(chunkStats.idle + chunkStats.blank) + "/" + juce::String(chunkStats.total()) + ")");
         shouldShowBadge = true;
     }
 
+    bool shouldShowOverlay = false;
     if (originalF0OverlayLatched_) {
         autoRenderOverlay_.setMessageText(LOC_RAW("Processing audio"));
         shouldShowOverlay = true;
@@ -831,6 +853,24 @@ void OpenTuneAudioProcessorEditor::timerCallback()
         transportBar_.setLoopEnabled(processorRef_.isLoopEnabled());
     }
 
+    // Timeline display mode sync from preferences
+    const auto prefMode = appPreferences_.getTimelineDisplayMode();
+    if (prefMode != timelineDisplayMode_) {
+        timelineDisplayMode_ = prefMode;
+        transportBar_.setTimelineDisplayMode(timelineDisplayMode_);
+        pianoRoll_.setTimelineDisplayMode(timelineDisplayMode_);
+    }
+}
+
+// =========================================================================
+// syncHostTransportMetadata — host transport metadata (BPM / time signature)
+// applied to the UI. Called from the heartbeat when the processor's RT-safe
+// generation counter moved (audio thread bumps it on change; never posts
+// messages, no locks/allocations on the real-time path).
+// =========================================================================
+
+void OpenTuneAudioProcessorEditor::syncHostTransportMetadata()
+{
     // BPM sync (host-owned, read-only)
     const double bpm = processorRef_.getBpm();
     if (bpm > 0.0 && std::abs(bpm - lastSyncedBpm_) > 0.001) {
@@ -848,14 +888,6 @@ void OpenTuneAudioProcessorEditor::timerCallback()
         pianoRoll_.setTimeSignature(timeSigNum, timeSigDenom);
         lastSyncedTimeSigNum_ = timeSigNum;
         lastSyncedTimeSigDenom_ = timeSigDenom;
-    }
-
-    // Timeline display mode sync from preferences
-    const auto prefMode = appPreferences_.getTimelineDisplayMode();
-    if (prefMode != timelineDisplayMode_) {
-        timelineDisplayMode_ = prefMode;
-        transportBar_.setTimelineDisplayMode(timelineDisplayMode_);
-        pianoRoll_.setTimelineDisplayMode(timelineDisplayMode_);
     }
 }
 
@@ -922,71 +954,160 @@ ContentKey OpenTuneAudioProcessorEditor::resolveCurrentContentKey()
     return resolveCurrentContentSync().activeContentKey;
 }
 
+std::vector<juce::ARAPlaybackRegion*>
+OpenTuneAudioProcessorEditor::resolveContentScopeRegions() const
+{
+#if JucePlugin_Enable_ARA
+    // Host selection 完全不参与：scope 只由本实例绑定的 ARA roles 决定
+    // （PlaybackRenderer regions 优先，否则 EditorRenderer regions）。
+    return processorRef_.getAssignedContentRegions();
+#else
+    return {};
+#endif
+}
+
+std::shared_ptr<const EditableContentSnapshot>
+OpenTuneAudioProcessorEditor::readContentSnapshot(ContentKey key) const
+{
+#if JucePlugin_Enable_ARA
+    if (key.domainKind == DomainKind::ARAComposite) {
+        if (auto* dc = processorRef_.getDocumentController())
+            return dc->readContentSnapshot(key);
+        return nullptr;
+    }
+#endif
+    return processorRef_.getContentSnapshot(key);
+}
+
+void OpenTuneAudioProcessorEditor::readScopeAudio(bool manual)
+{
+#if JucePlugin_Enable_ARA
+    // 先确保 compositeKey_ 已注册/已随最新 scope 更新。
+    resolveCurrentContentSync();
+    auto* dc = processorRef_.getDocumentController();
+    if (!dc)
+        return;
+
+    const auto scope = resolveContentScopeRegions();
+    const auto projections = dc->getPlaybackRegionProjectionsFor(scope);
+
+    if (projections.empty()) {
+        if (manual) {
+            OpenTune::ConfirmDialogContent::showMessage(&contentRoot_,
+                                                        LOC(kTooltipRecord),
+                                                        LOC(kVst3ReadAudioSelectionNotReady));
+        }
+        return;
+    }
+
+    // 按 contentKey 去重，收集唯一 playbackRegion。
+    std::set<ContentKey> seenKeys;
+    std::vector<juce::ARAPlaybackRegion*> uniqueRegions;
+    uniqueRegions.reserve(projections.size());
+    for (const auto& projection : projections) {
+        if (!projection.contentKey.isValid() || projection.playbackRegion == nullptr)
+            continue;
+        if (!seenKeys.insert(projection.contentKey).second)
+            continue;
+        uniqueRegions.push_back(projection.playbackRegion);
+    }
+    if (uniqueRegions.empty()) {
+        if (manual)
+            OpenTune::ConfirmDialogContent::showMessage(&contentRoot_,
+                                                        LOC(kTooltipRecord),
+                                                        LOC(kVst3ReadAudioSelectionNotReady));
+        return;
+    }
+
+    // P1-2：archive 恢复的有效内容不 force（保住已归档修音数据）；
+    // split 克隆的新 modification / 新实例仍走 force 首读。
+    const bool archivedContentPresent = dc->hasArchivedContentNeedingRestore();
+    const bool force = processorRef_.takeInitialAraReadPending() && !archivedContentPresent;
+    dc->requestReadAudioForPlaybackRegionsAsync(uniqueRegions, force,
+        [this, manual](int refreshed) {
+            if (refreshed < 0) {
+                if (manual) {
+                    OpenTune::ConfirmDialogContent::showMessage(&contentRoot_,
+                                                                LOC(kTooltipRecord),
+                                                                LOC(kVst3ReadAudioRegionsFailed));
+                } else {
+                    AppLogger::log("ReadAudio: auto-read failed, refreshed=" + juce::String(refreshed));
+                }
+                // P2-8：失败不清 autoReadAttempted_/compositeScopeChanged_，
+                // 允许同 scope 自动重试；节流防死循环（见 autoReadFailureCount_）。
+                ++autoReadFailureCount_;
+                return;
+            }
+
+            autoReadFailureCount_ = 0;
+            if (refreshed == 0) {
+                // This audio was already read and is unchanged: nothing visible happens, and without
+                // a message it is unclear whether the button worked. Auto reads stay silent.
+                if (manual)
+                    a11y::announce(pianoRoll_, LOC_RAW("Audio already read"));
+                return;
+            }
+
+            AppLogger::log("ReadAudio: refreshed " + juce::String(refreshed)
+                + " AudioModification(s) for composite scope");
+
+            // ARA Read 成功且已清旧 curve 后，立即同步投影，让旧 F0 不等待 timer 才消失
+            syncContentProjectionToPianoRoll();
+
+            // 遮罩只覆盖本次 composite scope 读取。
+            if (compositeKey_.isValid()) {
+                originalF0OverlayTargetContentKeys_ = { compositeKey_ };
+                // F0 状态机基线重置：防止 F0 完成早于首次 timer 观察导致跳变丢失
+                lastObservedOriginalF0States_[compositeKey_] = OriginalF0State::NotRequested;
+            }
+            // Composite 编辑回写是后续 lane：不给 composite 设置 pendingNoteGenerationOnReady_。
+            originalF0OverlayLatched_ = true;
+            if (manual)
+                a11y::announce(pianoRoll_, LOC_RAW("Processing audio"), a11y::SpeechQueue::keepAll);
+        });
+#else
+    juce::ignoreUnused(manual);
+#endif
+}
+
 OpenTuneAudioProcessorEditor::PianoRollContentSync
 OpenTuneAudioProcessorEditor::resolveCurrentContentSync()
 {
     PianoRollContentSync sync;
 
 #if JucePlugin_Enable_ARA
-    if (const auto* dc = processorRef_.getDocumentController()) {
-        // Build identity+placement pairs from all valid regions.
-        const auto allRegions = dc->getPlaybackRegionProjections();
-        std::vector<TimelineContentPlacement> allPlacements;
-        for (const auto& region : allRegions) {
-            if (!region.contentKey.isValid())
-                continue;
-            const auto projection = makePianoRollLocalProjection(processorRef_, region);
-            if (!projection.isValid())
-                continue;
-            allPlacements.push_back(makePlacement(region.contentKey, projection,
-                region.displayColour.value_or(UIColors::noteBlock)));
-        }
-
-        if (allPlacements.empty())
+    if (auto* dc = processorRef_.getDocumentController()) {
+        const auto scope = resolveContentScopeRegions();
+        if (scope.empty()) {
+            if (compositeKey_.isValid() && !lastCompositeScopeRegions_.empty()) {
+                dc->updateCompositeContent(compositeKey_, {});
+                lastCompositeScopeRegions_.clear();
+                compositeScopeChanged_ = true;
+            }
             return sync;
-
-        // Resolve active placement: focused → earliest
-        const auto focusedRegion = dc->getFocusedEditorPlaybackRegionProjection();
-        std::optional<PianoRollPlacementIdentity> activeIdentity;
-
-        if (focusedRegion.has_value() && focusedRegion->contentKey.isValid()) {
-            const auto focusedProj = makePianoRollLocalProjection(processorRef_, *focusedRegion);
-            if (focusedProj.isValid()) {
-                PianoRollPlacementIdentity focusedIdentity{
-                    focusedRegion->contentKey, focusedProj};
-                // Only adopt focused identity if it matches a placement exactly
-                const bool matched = std::any_of(allPlacements.begin(), allPlacements.end(),
-                    [&](const auto& p) { return p.contentKey == focusedIdentity.contentKey
-                        && p.projection.timelineStartSeconds == focusedIdentity.projection.timelineStartSeconds; });
-                if (matched)
-                    activeIdentity = focusedIdentity;
-            }
         }
-
-        // Fallback: earliest timeline item
-        if (!activeIdentity.has_value()) {
-            const auto* earliest = &allPlacements.front();
-            for (const auto& p : allPlacements) {
-                if (p.projection.timelineStartSeconds < earliest->projection.timelineStartSeconds)
-                    earliest = &p;
-            }
-            activeIdentity = PianoRollPlacementIdentity{earliest->contentKey, earliest->projection};
+        if (!compositeKey_.isValid()) {
+            compositeKey_ = dc->registerCompositeContent(processorRef_.getAraInstanceToken(), scope);
+            lastCompositeScopeRegions_ = scope;
+            compositeScopeChanged_ = true;
+        } else if (scope != lastCompositeScopeRegions_) {
+            dc->updateCompositeContent(compositeKey_, scope);
+            lastCompositeScopeRegions_ = scope;
+            compositeScopeChanged_ = true;
         }
-
-        sync.activePlacementIdentity = activeIdentity;
-        sync.activeContentKey = activeIdentity->contentKey;
-
-        // Put active placement at front so findEditedPlacement() resolves correctly.
-        auto activeIt = std::find_if(allPlacements.begin(), allPlacements.end(),
-            [&](const auto& p) { return p.contentKey == activeIdentity->contentKey
-                && p.projection.timelineStartSeconds == activeIdentity->projection.timelineStartSeconds; });
-        if (activeIt != allPlacements.end()) {
-            sync.placements.push_back(std::move(*activeIt));
-            allPlacements.erase(activeIt);
-        }
-        for (auto& p : allPlacements)
-            sync.placements.push_back(std::move(p));
-
+        const auto range = dc->getCompositeTrackRange(compositeKey_);
+        if (!range.has_value())
+            return sync;
+        ContentTimelineProjection projection;
+        projection.timelineStartSeconds = range->trackStartSeconds;
+        projection.timelineDurationSeconds = range->trackDurationSeconds;
+        projection.contentStartSeconds = 0.0;
+        projection.contentDurationSeconds = range->trackDurationSeconds;
+        if (!projection.isValid())
+            return sync;
+        sync.placements.push_back(makePlacement(compositeKey_, projection, UIColors::noteBlock));
+        sync.activeContentKey = compositeKey_;
+        sync.activePlacementIdentity = PianoRollPlacementIdentity{compositeKey_, projection};
         return sync;
     }
 #endif
@@ -1506,7 +1627,7 @@ void OpenTuneAudioProcessorEditor::externalEditRequested()
     }
 
     const auto activeKey = resolveCurrentContentKey();
-    const auto snapshot = processorRef_.getContentSnapshot(activeKey);
+    const auto snapshot = readContentSnapshot(activeKey);
     if (!activeKey.isValid() || snapshot == nullptr || snapshot->audioBuffer == nullptr
         || snapshot->audioBuffer->getNumSamples() <= 0) {
         OpenTune::ConfirmDialogContent::showMessage(&contentRoot_,
@@ -1559,66 +1680,13 @@ void OpenTuneAudioProcessorEditor::recordRequested()
 #endif
     return;
 #else
-    auto* dc = processorRef_.getDocumentController();
-
     AppLogger::log("VST3 recordRequested mode=ara-bound processor="
         + juce::String::toHexString(reinterpret_cast<uintptr_t>(&processorRef_))
-        + " dc=" + juce::String::toHexString(reinterpret_cast<uintptr_t>(dc)));
+        + " dc=" + juce::String::toHexString(
+            reinterpret_cast<uintptr_t>(processorRef_.getDocumentController())));
 
-    const auto focusedRegion = dc->getFocusedEditorPlaybackRegionProjection();
-    if (!focusedRegion.has_value() || focusedRegion->playbackRegion == nullptr)
-    {
-        AppLogger::log("VST3 recordRequested mode=ara-bound focused region unavailable");
-        transportBar_.setRecordButtonEnabled(false);
-        OpenTune::ConfirmDialogContent::showMessage(&contentRoot_,
-                                                    LOC(kTooltipRecord),
-                                                    LOC(kVst3ReadAudioSelectionNotReady));
-        return;
-    }
-
-    const auto targetPlaybackRegion = focusedRegion->playbackRegion;
-    dc->requestReadAudioForPlaybackRegionAsync(
-        targetPlaybackRegion,
-        [this, dc, targetPlaybackRegion](int refreshed) {
-            if (refreshed < 0) {
-                OpenTune::ConfirmDialogContent::showMessage(&contentRoot_,
-                                                            LOC(kTooltipRecord),
-                                                            LOC(kVst3ReadAudioRegionsFailed));
-                return;
-            }
-
-            if (refreshed == 0) {
-                // This audio was already read and is unchanged: nothing visible happens, and without
-                // a message it is unclear whether the button worked.
-                a11y::announce(pianoRoll_, LOC_RAW("Audio already read"));
-                return;
-            }
-
-            AppLogger::log("ReadAudio: refreshed " + juce::String(refreshed)
-                + " AudioModification(s) for focused playback region");
-
-            // ARA Read 成功且已清旧 curve 后，立即同步投影，让旧 F0 不等待 timer 才消失
-            syncContentProjectionToPianoRoll();
-
-            // 遮罩只覆盖本次读取的 focused modification。
-            originalF0OverlayTargetContentKeys_.clear();
-            const auto targetProjections = dc->getPlaybackRegionProjectionsFor(
-                std::vector<juce::ARAPlaybackRegion*>{targetPlaybackRegion});
-            if (targetProjections.empty() || !targetProjections.front().contentKey.isValid())
-                return;
-
-            const auto targetKey = targetProjections.front().contentKey;
-            originalF0OverlayTargetContentKeys_.push_back(targetKey);
-            // F0 状态机基线重置：防止 F0 完成早于首次 timer 观察导致跳变丢失
-            lastObservedOriginalF0States_[targetKey] = OriginalF0State::NotRequested;
-            // 捕获 OpenDyne 一次性音符生成意图，F0 Ready 跳变时消费
-            if (pianoRoll_.isOpenDyne())
-                pendingNoteGenerationOnReady_[targetKey] = pianoRoll_.getCurrentAutoTuneParams();
-            else
-                pendingNoteGenerationOnReady_.erase(targetKey);
-            originalF0OverlayLatched_ = true;
-            a11y::announce(pianoRoll_, LOC_RAW("Processing audio"), a11y::SpeechQueue::keepAll);
-        });
+    // Composite scope Read：去重后读取 scope 内全部唯一 AudioModification。
+    readScopeAudio(true);
 #endif
 }
 
@@ -1713,7 +1781,7 @@ void OpenTuneAudioProcessorEditor::autoTuneRequested()
     }
 
     OriginalF0State f0State = OriginalF0State::NotRequested;
-    if (auto snap = processorRef_.getContentSnapshot(activeKey))
+    if (auto snap = readContentSnapshot(activeKey))
         f0State = snap->originalF0State;
 #if JucePlugin_Enable_ARA
     else if (auto* dc = processorRef_.getDocumentController())
@@ -1729,7 +1797,7 @@ void OpenTuneAudioProcessorEditor::autoTuneRequested()
     }
 
     if (f0State == OriginalF0State::Failed) {
-        auto reason = processorRef_.getContentSnapshot(activeKey);
+        auto reason = readContentSnapshot(activeKey);
         juce::String failureReason = reason != nullptr
             ? juce::String(reason->originalF0FailureReason)
             : juce::String{};
@@ -1917,10 +1985,17 @@ OpenTuneAudioProcessorEditor::syncContentProjectionToPianoRoll()
             curveSnapshot = dc->readPitchCurve(sync.activeContentKey);
             detectedKey = dc->readDetectedKey(sync.activeContentKey);
         }
+    } else if (sync.activeContentKey.domainKind == DomainKind::ARAComposite) {
+        if (const auto* dc = processorRef_.getDocumentController()) {
+            auto snap = dc->readContentSnapshot(sync.activeContentKey);
+            syncBuffer = snap ? snap->audioBuffer : nullptr;
+            curveSnapshot = snap ? snap->pitchCurve : nullptr;
+            detectedKey = snap ? snap->detectedKey : DetectedKey{};
+        }
     } else
 #endif
     {
-        auto snap = processorRef_.getContentSnapshot(sync.activeContentKey);
+        auto snap = readContentSnapshot(sync.activeContentKey);
         syncBuffer = snap ? snap->audioBuffer : nullptr;
         curveSnapshot = snap ? snap->pitchCurve : nullptr;
         detectedKey = snap ? snap->detectedKey : DetectedKey{};
@@ -1989,6 +2064,17 @@ OpenTuneAudioProcessorEditor::syncContentProjectionToPianoRoll()
             lastResolvedScaleRootNote_ = rootNote;
             lastResolvedScaleType_ = scaleType;
         }
+    }
+
+    // 一次性 auto-Read：composite placement 就绪且尚未读过（或 scope 变化）时
+    // 自动触发一次读取。失败时不清 flags（P2-8 同 scope 自动重试），
+    // 但连续失败达上限后停止自动重试，防 30Hz 死循环。
+    if (!sync.isRegularVst3Capture && sync.hasPlacements()
+        && (!autoReadAttempted_ || compositeScopeChanged_)
+        && autoReadFailureCount_ < kMaxAutoReadFailures) {
+        autoReadAttempted_ = true;
+        compositeScopeChanged_ = false;
+        readScopeAudio(false);
     }
 
     return sync;

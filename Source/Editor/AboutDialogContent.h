@@ -55,6 +55,9 @@ public:
         viewport_.setScrollBarsShown(true, false);
         viewport_.setScrollBarThickness(8);
         viewport_.getVerticalScrollBar().setAccessible(false);
+        // JUCE Viewport is a Tab stop by default; NVDA read it as "unknown" (user test).
+        // Tab scrolls the focused line into view, so the viewport needs no focus.
+        viewport_.setWantsKeyboardFocus(false);
         addAndMakeVisible(viewport_);
 
         closeButton_.setButtonText(LOC(kClose));

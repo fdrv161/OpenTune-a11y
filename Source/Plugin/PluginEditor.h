@@ -143,6 +143,13 @@ private:
     };
 
     void timerCallback() override;
+    // Host transport metadata (BPM / time signature) UI application; called
+    // from the heartbeat when the processor's RT-safe generation counter moved.
+    void syncHostTransportMetadata();
+    uint32_t lastHostMetadataGeneration_ = 0;
+    // Onboarding is started on demand from state-change hooks (visibility,
+    // resize, F0 overlay release) instead of polling in the heartbeat.
+    void maybeStartOnboarding();
     // §7.3：心跳对比 Processor uiZoom（唯一真相），不同则重设 transform 与 resize limits。
     void applyUiZoomIfNeeded();
     void overviewNavigateRequested(double visibleStartSeconds,
@@ -151,6 +158,9 @@ private:
     void applyThemeToEditor(ThemeId themeId);
     ContentKey resolveCurrentContentKey();
     PianoRollContentSync resolveCurrentContentSync();
+    std::vector<juce::ARAPlaybackRegion*> resolveContentScopeRegions() const;
+    std::shared_ptr<const EditableContentSnapshot> readContentSnapshot(ContentKey key) const;
+    void readScopeAudio(bool manual);
     void syncParameterPanelFromSelection();
     PianoRollContentSync syncContentProjectionToPianoRoll();
     void rememberPresentedPianoRollViewport();
@@ -232,6 +242,15 @@ private:
     PitchShiftSettings lastPitchShiftIndicatorSettings_;
     juce::File externalEditSessionDir_;
     ContentKey externalEditContentKey_;
+
+    // ARA composite：单一 composite placement 的 key 与 scope 缓存。
+    ContentKey compositeKey_;
+    std::vector<juce::ARAPlaybackRegion*> lastCompositeScopeRegions_;
+    bool autoReadAttempted_{false};
+    bool compositeScopeChanged_{false};
+    // P2-8：auto-Read 连续失败计数（成功清零），达上限停止自动重试
+    int autoReadFailureCount_{0};
+    static constexpr int kMaxAutoReadFailures = 5;
 
     static constexpr int TOP_BAR_HEIGHT = 88;
     static constexpr int PARAMETER_PANEL_WIDTH = 240;
