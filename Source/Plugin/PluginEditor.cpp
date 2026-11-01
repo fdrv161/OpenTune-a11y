@@ -296,6 +296,11 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
         [this] { pianoRoll_.grabKeyboardFocus(); });
     contentRoot_.addChildComponent(*onboardingOverlay_);
 
+    // Upstream 59387696 dropped the per-tick preference sync and left no call here, so a
+    // new editor stayed in the default scheme: OpenDyne users got the classic mode, F1-F6
+    // went to the host and Read Audio made no notes (user test). Apply the saved state once.
+    syncSharedAppPreferences();
+
     startTimerHz(kHeartbeatHz);
     // Host transport metadata (BPM/time signature): applied on demand from the
     // heartbeat when the processor's RT-safe generation counter moves; also
@@ -1603,6 +1608,25 @@ void OpenTuneAudioProcessorEditor::recordRequested()
             }
 
             if (refreshed == 0) {
+                // The audio is read but OpenDyne has no notes (the auto read ran in the wrong
+                // scheme, or its notes were removed): pressing Read again was a dead end
+                // (user test), so make the notes from the existing pitch, as the first read does.
+                const auto projections = dc->getPlaybackRegionProjectionsFor(
+                    std::vector<juce::ARAPlaybackRegion*>{targetPlaybackRegion});
+                if (pianoRoll_.isOpenDyne() && !projections.empty()
+                    && projections.front().contentKey.isValid()) {
+                    const auto key = projections.front().contentKey;
+                    const auto snap = processorRef_.getContentSnapshot(key);
+                    if (snap != nullptr && snap->originalF0State == OriginalF0State::Ready
+                        && snap->notes.empty()
+                        && contentCommands_->generateNotesOnly(key, pianoRoll_.getCurrentAutoTuneParams())) {
+                        syncContentProjectionToPianoRoll();
+                        const auto after = processorRef_.getContentSnapshot(key);
+                        a11y::announce(pianoRoll_, Loc::format(LOC_RAW("Notes made: {0}"),
+                            juce::String(after != nullptr ? static_cast<int>(after->notes.size()) : 0)));
+                        return;
+                    }
+                }
                 // This audio was already read and is unchanged: nothing visible happens, and without
                 // a message it is unclear whether the button worked.
                 a11y::announce(pianoRoll_, LOC_RAW("Audio already read"));
