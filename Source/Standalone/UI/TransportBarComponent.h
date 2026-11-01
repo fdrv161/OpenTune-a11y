@@ -245,7 +245,6 @@ public:
     void setPositionSeconds(double seconds);
 
     void setWorkspaceView(bool workspaceView);
-    void setRenderStatusText(const juce::String& text);
 
     void setTimelineDisplayMode(TimelineDisplayMode mode);
     TimelineDisplayMode getTimelineDisplayMode() const { return timelineDisplayMode_; }
@@ -309,7 +308,6 @@ private:
     bool workspaceView_ = true;
     bool embeddedInTopBar_ = false;
     LayoutProfile layoutProfile_ = LayoutProfile::StandaloneFull;
-    juce::String renderStatusText_;
     juce::Time lastTapTime_;
     std::vector<double> tapIntervals_;
     static const int maxTapSamples_ = 5;

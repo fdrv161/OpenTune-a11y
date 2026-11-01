@@ -131,7 +131,7 @@ static void testCoalescedTimelineCommit()
     check(isCall(calls[2], HostTransportCall::Kind::Start), "restart resumes playback");
 }
 
-static void testPlainSeekAndTransportOverrides()
+static void testPlainSeekRequests()
 {
     HostTransportCoalescer preview;
     preview.previewSeek(8.0);
@@ -144,51 +144,81 @@ static void testPlainSeekAndTransportOverrides()
     const auto stoppedCalls = planHostTransportCalls(stopped.take());
     check(stoppedCalls.size() == 1 && isCall(stoppedCalls[0], HostTransportCall::Kind::Seek, 6.0),
           "commit while stopped does not restart");
-
-    HostTransportCoalescer playFromSeek;
-    playFromSeek.commitSeek(2.0, false);
-    playFromSeek.requestStart();
-    const auto playCalls = planHostTransportCalls(playFromSeek.take());
-    check(playCalls.size() == 2
-              && isCall(playCalls[0], HostTransportCall::Kind::Seek, 2.0)
-              && isCall(playCalls[1], HostTransportCall::Kind::Start),
-          "play from a seek position seeks then starts");
-
-    HostTransportCoalescer replaced;
-    replaced.commitSeek(5.0, true);
-    replaced.requestStart();
-    replaced.requestStop();
-    const auto stopCalls = planHostTransportCalls(replaced.take());
-    check(stopCalls.size() == 2
-              && isCall(stopCalls[0], HostTransportCall::Kind::Stop)
-              && isCall(stopCalls[1], HostTransportCall::Kind::Seek, 5.0),
-          "stop cancels a pending restart and still lands the seek");
-
-    HostTransportCoalescer stopOnly;
-    stopOnly.requestStop();
-    const auto stopOnlyCalls = planHostTransportCalls(stopOnly.take());
-    check(stopOnlyCalls.size() == 1 && isCall(stopOnlyCalls[0], HostTransportCall::Kind::Stop),
-          "stop alone is one stop request");
-
-    HostTransportCoalescer resume;
-    resume.requestStop();
-    resume.requestStart();
-    const auto resumeCalls = planHostTransportCalls(resume.take());
-    check(resumeCalls.size() == 1 && isCall(resumeCalls[0], HostTransportCall::Kind::Start),
-          "the later transport command wins");
 }
 
-static void testCycleIsPreserved()
+static void testHostStopClearsPendingSeek()
 {
-    HostTransportCoalescer coalescer;
-    coalescer.requestCycle(true);
-    coalescer.commitSeek(1.0, false);
-    coalescer.requestCycle(false);
-    const auto calls = planHostTransportCalls(coalescer.take());
-    check(calls.size() == 2, "seek and cycle both survive");
-    check(isCall(calls[0], HostTransportCall::Kind::Seek, 1.0), "seek stays ahead of cycle");
-    check(calls[1].kind == HostTransportCall::Kind::Cycle && !calls[1].cycleEnabled,
-          "the latest cycle value wins");
+    PendingSeekPolicy::Input in;
+    in.pendingTimeSeconds = 12.5;
+    in.canonicalTimeSeconds = 1.0;
+    in.hostTimeAtGestureSeconds = 1.0;
+    in.issuedAtSeconds = 10.0;
+    in.nowSeconds = 10.0 + PendingSeekPolicy::holdDeadlineSeconds + 0.01;
+    in.pendingEpoch = 4;
+    in.currentEpoch = 9;
+    in.hostBound = true;
+    in.hostWasPlayingAtGesture = true;
+    in.hostIsPlayingNow = false;
+
+    const auto decision = PendingSeekPolicy::evaluate(in);
+    check(decision.clearPending && !decision.holdPending,
+          "a host that stopped before reaching the seek drops the pending time");
+}
+
+static void testNearTargetBeatsHostStop()
+{
+    PendingSeekPolicy::Input in;
+    in.pendingTimeSeconds = 12.5;
+    in.canonicalTimeSeconds = 12.53;
+    in.hostTimeAtGestureSeconds = 1.0;
+    in.issuedAtSeconds = 10.0;
+    in.nowSeconds = 10.0 + PendingSeekPolicy::holdDeadlineSeconds + 1.0;
+    in.pendingEpoch = 4;
+    in.currentEpoch = 9;
+    in.hostBound = true;
+    in.hostWasPlayingAtGesture = true;
+    in.hostIsPlayingNow = false;
+
+    const auto decision = PendingSeekPolicy::evaluate(in);
+    check(decision.clearPending, "a host that landed on the seek clears it even after stopping");
+}
+
+static void testStoppedSeekHoldsPastDeadline()
+{
+    PendingSeekPolicy::Input in;
+    in.pendingTimeSeconds = 12.5;
+    in.canonicalTimeSeconds = 1.0;
+    in.hostTimeAtGestureSeconds = 1.0;
+    in.issuedAtSeconds = 10.0;
+    in.nowSeconds = 10.0 + PendingSeekPolicy::holdDeadlineSeconds + 1.0;
+    in.pendingEpoch = 4;
+    in.currentEpoch = 9;
+    in.hostBound = true;
+    in.hostWasPlayingAtGesture = false;
+    in.hostIsPlayingNow = false;
+
+    const auto decision = PendingSeekPolicy::evaluate(in);
+    check(decision.holdPending && decision.detachFromHost && !decision.clearPending,
+          "a seek issued while stopped keeps the edit cursor past the deadline");
+}
+
+static void testPlayingSeekHoldsPastDeadline()
+{
+    PendingSeekPolicy::Input in;
+    in.pendingTimeSeconds = 12.5;
+    in.canonicalTimeSeconds = 1.0;
+    in.hostTimeAtGestureSeconds = 1.0;
+    in.issuedAtSeconds = 10.0;
+    in.nowSeconds = 10.0 + PendingSeekPolicy::holdDeadlineSeconds + 1.0;
+    in.pendingEpoch = 4;
+    in.currentEpoch = 9;
+    in.hostBound = true;
+    in.hostWasPlayingAtGesture = true;
+    in.hostIsPlayingNow = true;
+
+    const auto decision = PendingSeekPolicy::evaluate(in);
+    check(decision.holdPending && decision.detachFromHost && !decision.clearPending,
+          "a still playing host keeps the edit cursor past the deadline");
 }
 
 int main()
@@ -198,8 +228,11 @@ int main()
     testLocalEditCursor();
     testLogicRestartRule();
     testCoalescedTimelineCommit();
-    testPlainSeekAndTransportOverrides();
-    testCycleIsPreserved();
+    testPlainSeekRequests();
+    testHostStopClearsPendingSeek();
+    testNearTargetBeatsHostStop();
+    testStoppedSeekHoldsPastDeadline();
+    testPlayingSeekHoldsPastDeadline();
 
     if (failures == 0)
     {

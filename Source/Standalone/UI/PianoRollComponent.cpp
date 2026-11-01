@@ -521,6 +521,7 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
     toolCtx.notifyAutoTuneRequested = [this]() { listeners_.call([](Listener& l) { l.autoTuneRequested(); }); };
     toolCtx.notifyPlayPauseToggle = [this]() { listeners_.call([](Listener& l) { l.playPauseToggleRequested(); }); };
     toolCtx.notifyStopPlayback = [this]() { listeners_.call([](Listener& l) { l.stopPlaybackRequested(); }); };
+    toolCtx.transportShortcutsEnabled = transportControlsEnabled_;
     toolCtx.notifyEscapeKey = [this]() {
         // Accessibility: an open EQ window closes first.
         if (eqPopup_ != nullptr) {
@@ -600,6 +601,7 @@ PianoRollToolHandler::Context PianoRollComponent::buildToolHandlerContext() {
         pendingSeekIssuedAtSeconds_ = juce::Time::getMillisecondCounterHiRes() * 0.001;
         pendingSeekHostBound_ = hostAccepted;
         pendingSeekHostTimeAtGesture_ = hostTime;
+        pendingSeekHostWasPlaying_ = playHeadState_.isPlaying.load(std::memory_order_acquire);
         playheadTimeForPaint_ = time;
         overlay_->repaint();
         if (!hostAccepted)
@@ -1116,12 +1118,14 @@ void PianoRollComponent::initializeToolHandler() {
 
 PianoRollComponent::PianoRollComponent(const PlayHeadState& playHeadState,
                                        UndoManager& undoManager,
-                                       SpectrumReader spectrumReader)
+                                       SpectrumReader spectrumReader,
+                                       bool transportControlsEnabled)
     : playHeadState_(playHeadState),
       undoManager_(undoManager),
       spectrumReader_(std::move(spectrumReader)),
       eqCursor_(CursorThemeManager::getInstance().resolveCursor(
-          juce::MouseCursor(ToolbarIcons::createEqIconImage(), 12, 12))) {
+          juce::MouseCursor(ToolbarIcons::createEqIconImage(), 12, 12))),
+      transportControlsEnabled_(transportControlsEnabled) {
     initializeUIComponents();
     initializeRenderer();
     initializeToolHandler();
@@ -3834,6 +3838,7 @@ void PianoRollComponent::applyEditedContent(ContentKey contentKey,
         // Pending seeks belong to the active placement, not just its content.
         pendingSeekTime_ = -1.0;
         pendingSeekEpoch_ = 0;
+        pendingSeekHostWasPlaying_ = false;
     }
 
     if (contentChanged) {
@@ -4303,11 +4308,14 @@ void PianoRollComponent::onScrollVBlankCallback(double timestampSec)
         pendingSeekInput.pendingEpoch = pendingSeekEpoch_;
         pendingSeekInput.currentEpoch = playHeadState_.presentationEpoch.load(std::memory_order_acquire);
         pendingSeekInput.hostBound = pendingSeekHostBound_;
+        pendingSeekInput.hostWasPlayingAtGesture = pendingSeekHostWasPlaying_;
+        pendingSeekInput.hostIsPlayingNow = playHeadState_.isPlaying.load(std::memory_order_acquire);
         const PendingSeekPolicy::Decision decision = PendingSeekPolicy::evaluate(pendingSeekInput);
         if (decision.clearPending) {
             pendingSeekTime_ = -1.0;
             pendingSeekEpoch_ = 0;
             pendingSeekHostBound_ = false;
+            pendingSeekHostWasPlaying_ = false;
             userScrollHold_ = false;
         } else {
             if (decision.detachFromHost) {
@@ -4927,7 +4935,8 @@ bool PianoRollComponent::endFingerPress(const juce::MouseEvent& e) {
             dispatchMouseUp(e);
             if (e.getNumberOfClicks() == 2) {
                 g.suppressDoubleClick = true;
-                listeners_.call([](Listener& l) { l.playPauseToggleRequested(); });
+                if (transportControlsEnabled_)
+                    listeners_.call([](Listener& l) { l.playPauseToggleRequested(); });
             }
             break;
         case FingerGesture::Mode::Forwarded:

@@ -207,6 +207,7 @@ public:
         std::function<void()> notifyAutoTuneRequested;
         std::function<void()> notifyPlayPauseToggle;
         std::function<void()> notifyStopPlayback;
+        bool transportShortcutsEnabled = true;
         // Returns false when Esc is not used here and should go on to the host.
         std::function<bool()> notifyEscapeKey;
         std::function<void(size_t, float, float)> notifyNoteOffsetChanged;

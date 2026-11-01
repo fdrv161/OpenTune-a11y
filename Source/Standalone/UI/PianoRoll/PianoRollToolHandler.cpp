@@ -707,14 +707,16 @@ bool PianoRollToolHandler::keyPressed(const juce::KeyPress& key,
     }
     // ==== End tool switching ====
 
-    if (matches(KeyShortcutConfig::ShortcutId::PlayPause)) {
-        ctx_.notifyPlayPauseToggle();
-        return true;
-    }
+    if (ctx_.transportShortcutsEnabled) {
+        if (matches(KeyShortcutConfig::ShortcutId::PlayPause)) {
+            ctx_.notifyPlayPauseToggle();
+            return true;
+        }
 
-    if (matches(KeyShortcutConfig::ShortcutId::Stop)) {
-        ctx_.notifyStopPlayback();
-        return true;
+        if (matches(KeyShortcutConfig::ShortcutId::Stop)) {
+            ctx_.notifyStopPlayback();
+            return true;
+        }
     }
 
     if (matches(KeyShortcutConfig::ShortcutId::Delete)) {

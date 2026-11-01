@@ -133,7 +133,8 @@ public:
 
     PianoRollComponent(const PlayHeadState& playHeadState,
                        UndoManager& undoManager,
-                       SpectrumReader spectrumReader);
+                       SpectrumReader spectrumReader,
+                       bool transportControlsEnabled = true);
     ~PianoRollComponent() override;
 
     void paint(juce::Graphics& g) override;
@@ -233,15 +234,6 @@ public:
     void setTrackDisplayColour(juce::Colour colour);
     void setZoomSensitivity(const ZoomSensitivityConfig::ZoomSensitivitySettings& settings) { zoomSensitivity_ = settings; }
     void setShortcutSettings(const KeyShortcutConfig::KeyShortcutSettings& settings) { shortcutSettings_ = settings; }
-
-    double consumePendingSeekTime() noexcept
-    {
-        // Do NOT reset pendingSeekTime_ here. The vblank policy clears it when
-        // a later host observation lands near the request, or when the hold
-        // deadline expires. Resetting here would paint the old host position
-        // for a frame and jitter the playhead.
-        return pendingSeekTime_;
-    }
 
     void resetUserZoomFlag() { userHasManuallyZoomed_ = false; }
 
@@ -809,6 +801,8 @@ private:
     double pendingSeekHostTimeAtGesture_ = 0.0;
     uint64_t pendingSeekEpoch_ = 0;
     bool pendingSeekHostBound_ = false;
+    bool pendingSeekHostWasPlaying_ = false;
+    bool transportControlsEnabled_ = true;
     bool trackCaptureTint_ = false;
 
     juce::ListenerList<Listener> listeners_;
