@@ -374,7 +374,6 @@ constexpr const char* kChromatic = "Chromatic";
 constexpr const char* kKeyScale = "Key Scale";
 constexpr const char* kPitchShift = "Pitch Shift";
 constexpr const char* kPreferences = "Preferences";
-constexpr const char* kHostControlledTransport = "Host-controlled transport";
 constexpr const char* kUntitled = "Untitled";
 constexpr const char* kTrackPrefix = "Track ";
 constexpr const char* kClip = "Clip";
@@ -908,7 +907,6 @@ inline juce::String get(Language lang, const char* key)
         { "AUTO corrects pitch by snapping to nearby scale notes.", "AUTO corrects pitch by snapping to nearby scale notes.", "自动修音（吸附到临近音阶）", "AUTOで近くの音階にスナップしてピッチを補正", "AUTO корректирует высоту тона, привязывая её к ближайшим ступеням гаммы.", "AUTO corrige el tono ajustándolo a las notas cercanas de la escala." },
         { Keys::kPitchShift, "Pitch Shift", "整体移调", "全体のピッチを移調", "Транспонирование", "Transposición" },
         { Keys::kPreferences, "Preferences", "偏好设置", "環境設定", "Настройки", "Preferencias" },
-        { Keys::kHostControlledTransport, "Host-controlled transport", "由宿主控制走带", "ホスト制御のトランスポート", "Транспорт под управлением хоста", "Transporte controlado por el host" },
         { Keys::kPitchEditing, "Pitch editing", "音高编辑", "ピッチ編集", "Редактирование высоты тона", "Edición de tono" },
         { Keys::kSplitNotes, "Split notes", "切割音符", "ノートを分割", "Разделить ноты", "Dividir notas" },
         { "EQ frequency equalizer", "EQ frequency equalizer", "EQ 频率均衡", "EQ周波数イコライザー", "Частотный эквалайзер EQ", "Ecualizador de frecuencia EQ" },

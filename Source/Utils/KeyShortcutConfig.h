@@ -319,22 +319,28 @@ private:
 };
 
 inline const ShortcutInfo kShortcutInfos[] = {
+    // Transport（PlayPause / Stop / PlayFromStart）：VST3/ARA 插件内 transport 归宿主所有，
+    // 插件运行时不消费这些快捷键，也不发送任何 transport 请求；绑定只对 Standalone 生效。
     { ShortcutId::PlayPause, "shared.shortcuts.playPause", Loc::Keys::kPlayPause,
       kPluginEditorGeneralScope | kStandaloneArrangementScope | kPianoRollOpenTuneScope | kPianoRollOpenDyneScope,
       { KeyBinding(juce::KeyPress::spaceKey, {}) } },
 #if JUCE_MAC || JUCE_IOS
+    // Stop: 只对 Standalone 生效（插件内 transport 归宿主）。
     { ShortcutId::Stop, "shared.shortcuts.stop", Loc::Keys::kStop,
       kPluginEditorGeneralScope | kStandaloneArrangementScope | kPianoRollOpenTuneScope | kPianoRollOpenDyneScope,
       { KeyBinding('.', juce::ModifierKeys::commandModifier | juce::ModifierKeys::altModifier
                                 | juce::ModifierKeys::shiftModifier) } },
+    // PlayFromStart: 只对 Standalone 生效（插件内 transport 归宿主）。
     { ShortcutId::PlayFromStart, "shared.shortcuts.playFromStart", Loc::Keys::kPlayFromStart,
       kPluginEditorGeneralScope | kStandaloneArrangementScope | kPianoRollOpenTuneScope | kPianoRollOpenDyneScope,
       { KeyBinding(juce::KeyPress::returnKey,
                    juce::ModifierKeys::commandModifier | juce::ModifierKeys::altModifier | juce::ModifierKeys::shiftModifier) } },
 #else
+    // Stop: 只对 Standalone 生效（插件内 transport 归宿主）。
     { ShortcutId::Stop, "shared.shortcuts.stop", Loc::Keys::kStop,
       kPluginEditorGeneralScope | kStandaloneArrangementScope | kPianoRollOpenTuneScope | kPianoRollOpenDyneScope,
       { KeyBinding(juce::KeyPress::returnKey, {}) } },
+    // PlayFromStart: 只对 Standalone 生效（插件内 transport 归宿主）。
     { ShortcutId::PlayFromStart, "shared.shortcuts.playFromStart", Loc::Keys::kPlayFromStart,
       kStandaloneArrangementScope | kPianoRollOpenTuneScope | kPianoRollOpenDyneScope,
       { KeyBinding('A', {}) } },

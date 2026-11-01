@@ -2572,7 +2572,7 @@ bool OpenTuneDocumentController::removePlaybackRegion(juce::ARAPlaybackRegion* p
 // RestoredContentBinding removed — ARA archive now uses ContentKey + content payload.
 // Legacy archive records are skipped during doRestoreObjectsFromStream.
 
-bool OpenTuneDocumentController::hostPlaybackTransportAvailable()
+bool OpenTuneDocumentController::hostSeekAvailable()
 {
     auto* dc = getDocumentController();
     if (dc == nullptr)
@@ -2586,19 +2586,10 @@ bool OpenTuneDocumentController::hostPlaybackTransportAvailable()
     if (iface == nullptr)
         return false;
 
-    const bool canSeek = playbackMemberCallable(
+    return playbackMemberCallable(
         iface,
         ARA_IMPLEMENTS_FIELD(iface, ARAPlaybackControllerInterface, requestSetPlaybackPosition),
         &ARA::ARAPlaybackControllerInterface::requestSetPlaybackPosition);
-    const bool canStart = playbackMemberCallable(
-        iface,
-        ARA_IMPLEMENTS_FIELD(iface, ARAPlaybackControllerInterface, requestStartPlayback),
-        &ARA::ARAPlaybackControllerInterface::requestStartPlayback);
-    const bool canStop = playbackMemberCallable(
-        iface,
-        ARA_IMPLEMENTS_FIELD(iface, ARAPlaybackControllerInterface, requestStopPlayback),
-        &ARA::ARAPlaybackControllerInterface::requestStopPlayback);
-    return canSeek && canStart && canStop;
 }
 
 bool OpenTuneDocumentController::logicHostIsPlaying() const noexcept
@@ -2671,15 +2662,12 @@ void OpenTuneDocumentController::performHostTransportBatch(const HostTransportBa
     if (iface == nullptr)
         return;
 
-    if (batch.seekIsCommit || batch.hasTransport || batch.hasCycle)
+    if (batch.seekIsCommit)
     {
         AppLogger::log("ARA-TRANSPORT: flush seek="
             + juce::String(batch.hasSeek ? "true" : "false")
             + " commit=" + juce::String(batch.seekIsCommit ? "true" : "false")
-            + " restart=" + juce::String(batch.restartIfPlaying ? "true" : "false")
-            + " transport=" + juce::String(batch.hasTransport
-                ? (batch.startPlayback ? "start" : "stop")
-                : "none"));
+            + " restart=" + juce::String(batch.restartIfPlaying ? "true" : "false"));
     }
 
     for (const auto& call : planHostTransportCalls(batch))
@@ -2704,19 +2692,13 @@ void OpenTuneDocumentController::performHostTransportBatch(const HostTransportBa
                         &ARA::ARAPlaybackControllerInterface::requestStartPlayback))
                     playbackController->requestStartPlayback();
                 break;
-            case HostTransportCall::Kind::Cycle:
-                if (playbackMemberCallable(iface,
-                        ARA_IMPLEMENTS_FIELD(iface, ARAPlaybackControllerInterface, requestEnableCycle),
-                        &ARA::ARAPlaybackControllerInterface::requestEnableCycle))
-                    playbackController->requestEnableCycle(call.cycleEnabled);
-                break;
         }
     }
 }
 
 bool OpenTuneDocumentController::requestSetPlaybackPosition(double timeInSeconds)
 {
-    if (!hostPlaybackTransportAvailable())
+    if (!hostSeekAvailable())
         return false;
 
     enqueueHostTransport([timeInSeconds](HostTransportCoalescer& coalescer)
@@ -2728,12 +2710,10 @@ bool OpenTuneDocumentController::requestSetPlaybackPosition(double timeInSeconds
 
 bool OpenTuneDocumentController::requestCommitPlaybackPosition(double timeInSeconds)
 {
-    if (!hostPlaybackTransportAvailable())
+    if (!hostSeekAvailable())
         return false;
 
     const bool restart = logicHostIsPlaying();
-    if (restart)
-        markPlaybackRequest(true);
 
     enqueueHostTransport([timeInSeconds, restart](HostTransportCoalescer& coalescer)
     {
@@ -2742,48 +2722,10 @@ bool OpenTuneDocumentController::requestCommitPlaybackPosition(double timeInSeco
     return true;
 }
 
-void OpenTuneDocumentController::observeHostPlaybackState(bool isPlaying) noexcept
-{
-    auto state = playbackCommandState_.load(std::memory_order_acquire);
-    auto next = state + kStateVersionIncrement;
-
-    // Publish this observation and, when it matches the request that was
-    // present in the same snapshot, confirm that request. A failed CAS means a
-    // newer request or observation won the race; do not spin on the audio thread
-    // or reinterpret this old PositionInfo against the newer state.
-    next |= kObservedValid;
-    if (isPlaying)
-        next |= kObservedPlaying;
-    else
-        next &= ~kObservedPlaying;
-
-    const bool pending = (state & kRequestPending) != 0;
-    const bool targetPlaying = (state & kTargetPlaying) != 0;
-    if (pending && targetPlaying == isPlaying)
-        next &= ~kRequestPending;
-
-    if ((next & kRequestPending) == 0)
-    {
-        if (isPlaying)
-            next |= kTargetPlaying;
-        else
-            next &= ~kTargetPlaying;
-    }
-
-    playbackCommandState_.compare_exchange_strong(state,
-                                                  next,
-                                                  std::memory_order_acq_rel,
-                                                  std::memory_order_relaxed);
-}
-
 void OpenTuneDocumentController::observeHostPlaybackPosition(
     const juce::Optional<juce::AudioPlayHead::PositionInfo>& positionInfo,
     double blockDurationSeconds) noexcept
 {
-    // Update the CAS-based play/stop observation first (preserves existing logic).
-    if (positionInfo.hasValue())
-        observeHostPlaybackState(positionInfo->getIsPlaying());
-
     // Update document-shared canonical transport truth from a realtime editor
     // renderer. Playback renderers may be ahead of the current playhead and must
     // not enter this path.
@@ -2803,144 +2745,6 @@ void OpenTuneDocumentController::observeHostPlaybackPosition(
                     *timeSec, nowClock, horizon, updateResult.epoch);
         }
     }
-}
-
-void OpenTuneDocumentController::markPlaybackRequest(bool shouldPlay) noexcept
-{
-    auto state = playbackCommandState_.load(std::memory_order_acquire);
-    for (;;)
-    {
-        auto next = state + kStateVersionIncrement;
-        next |= kRequestPending;
-        if (shouldPlay)
-            next |= kTargetPlaying;
-        else
-            next &= ~kTargetPlaying;
-
-        if (playbackCommandState_.compare_exchange_weak(state,
-                                                        next,
-                                                        std::memory_order_acq_rel,
-                                                        std::memory_order_acquire))
-            return;
-    }
-}
-
-bool OpenTuneDocumentController::requestTogglePlayback(bool fallbackObservedPlaying, double pendingSeekTime)
-{
-    // Message-thread only. The host call is deferred; the CAS decision stays synchronous.
-    if (!hostPlaybackTransportAvailable())
-        return false;
-
-    auto state = playbackCommandState_.load(std::memory_order_acquire);
-    bool newTarget = false;
-    for (;;)
-    {
-        const bool pending = (state & kRequestPending) != 0;
-        const bool targetPlaying = (state & kTargetPlaying) != 0;
-        const bool observedValid = (state & kObservedValid) != 0;
-        const bool observedPlaying = (state & kObservedPlaying) != 0;
-
-        // Decision priority: pending target (flip) > valid shared observed (flip)
-        // > caller's local processor snapshot as first-contact fallback.
-        if (pending)
-            newTarget = !targetPlaying;
-        else if (observedValid)
-            newTarget = !observedPlaying;
-        else
-            newTarget = !fallbackObservedPlaying;
-
-        auto next = state + kStateVersionIncrement;
-        next |= kRequestPending;
-        if (newTarget)
-            next |= kTargetPlaying;
-        else
-            next &= ~kTargetPlaying;
-
-        if (playbackCommandState_.compare_exchange_weak(state,
-                                                        next,
-                                                        std::memory_order_acq_rel,
-                                                        std::memory_order_acquire))
-            break;
-    }
-
-    if (newTarget)
-    {
-        const bool restart = pendingSeekTime >= 0.0 && logicHostIsPlaying();
-        enqueueHostTransport([pendingSeekTime, restart](HostTransportCoalescer& coalescer)
-        {
-            if (pendingSeekTime >= 0.0)
-                coalescer.commitSeek(pendingSeekTime, restart);
-            coalescer.requestStart();
-        });
-        AppLogger::log("ARA-TRANSPORT: toggle target=start observed="
-            + juce::String((state & kObservedValid)
-                ? ((state & kObservedPlaying) ? "true" : "false")
-                : "unknown")
-            + " fallback=" + juce::String(fallbackObservedPlaying ? "true" : "false"));
-    }
-    else
-    {
-        enqueueHostTransport([](HostTransportCoalescer& coalescer)
-        {
-            coalescer.requestStop();
-        });
-        AppLogger::log("ARA-TRANSPORT: toggle target=stop observed="
-            + juce::String((state & kObservedValid)
-                ? ((state & kObservedPlaying) ? "true" : "false")
-                : "unknown")
-            + " fallback=" + juce::String(fallbackObservedPlaying ? "true" : "false"));
-    }
-    return true;
-}
-
-bool OpenTuneDocumentController::requestStartPlayback(double pendingSeekTime)
-{
-    if (!hostPlaybackTransportAvailable())
-        return false;
-
-    const bool restart = pendingSeekTime >= 0.0 && logicHostIsPlaying();
-    markPlaybackRequest(true);
-    enqueueHostTransport([pendingSeekTime, restart](HostTransportCoalescer& coalescer)
-    {
-        if (pendingSeekTime >= 0.0)
-            coalescer.commitSeek(pendingSeekTime, restart);
-        coalescer.requestStart();
-    });
-    return true;
-}
-
-bool OpenTuneDocumentController::requestStopPlayback()
-{
-    if (!hostPlaybackTransportAvailable())
-        return false;
-
-    markPlaybackRequest(false);
-    enqueueHostTransport([](HostTransportCoalescer& coalescer)
-    {
-        coalescer.requestStop();
-    });
-    return true;
-}
-
-bool OpenTuneDocumentController::requestEnableCycle(bool enabled)
-{
-    if (!hostPlaybackTransportAvailable())
-        return false;
-
-    auto* playbackController = getDocumentController()->getHostPlaybackController();
-    const ARA::ARAPlaybackControllerInterface* iface = playbackController != nullptr
-        ? playbackController->getInterface()
-        : nullptr;
-    if (!playbackMemberCallable(iface,
-            iface != nullptr && ARA_IMPLEMENTS_FIELD(iface, ARAPlaybackControllerInterface, requestEnableCycle),
-            &ARA::ARAPlaybackControllerInterface::requestEnableCycle))
-        return false;
-
-    enqueueHostTransport([enabled](HostTransportCoalescer& coalescer)
-    {
-        coalescer.requestCycle(enabled);
-    });
-    return true;
 }
 
 // -----------------------------------------------------------------------

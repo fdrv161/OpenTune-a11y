@@ -1861,7 +1861,6 @@ void OpenTuneAudioProcessorEditor::timerCallback()
     if (renderBadge_.isVisible() != shouldShowBadge) {
         renderBadge_.setVisible(shouldShowBadge);
     }
-    transportBar_.setRenderStatusText(juce::String());
 
     if (autoRenderOverlay_.isVisible() != shouldShowOverlay) {
         autoRenderOverlay_.setVisible(shouldShowOverlay);

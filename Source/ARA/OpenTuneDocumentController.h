@@ -140,20 +140,12 @@ public:
     // flushed as stop, then position, then start. Other hosts get a position
     // request only. Availability is returned immediately; the host call is deferred.
     bool requestCommitPlaybackPosition(double timeInSeconds);
-    bool requestStartPlayback(double pendingSeekTime = -1.0);
-    bool requestStopPlayback();
-    bool requestTogglePlayback(bool fallbackObservedPlaying, double pendingSeekTime = -1.0);
-    void observeHostPlaybackState(bool isPlaying) noexcept;
     // Publish host PositionInfo to document-shared PlayHeadState. Called from
     // the realtime ARA editor renderer's processBlock. Playback renderers may be
     // ahead of the current playhead and must not publish here.
     void observeHostPlaybackPosition(
         const juce::Optional<juce::AudioPlayHead::PositionInfo>& positionInfo,
         double blockDurationSeconds) noexcept;
-    // ARA2 official one-way HostPlaybackController requests for loop control.
-    // Per ARA2 spec, host may ignore/delay/quantize; loop truth is observed
-    // via companion PositionInfo in processBlock, never written here.
-    bool requestEnableCycle(bool enabled);
 
 protected:
     bool doRestoreObjectsFromStream(juce::ARAInputStream& input,
@@ -185,27 +177,7 @@ private:
     std::shared_ptr<ResamplingManager> resamplingManager_;
     std::unique_ptr<F0ExtractionService> contentF0ExtractionService_;
 
-    // Shared across every ARA role bound to this document. One versioned,
-    // CAS-protected word prevents an old PositionInfo observation from clearing
-    // a newer UI request, including an ABA sequence of rapid toggles.
-    //
-    // Bit layout (low four bits are flags; the upper bits are a change version):
-    //   bit 0 kObservedValid   — false until first observeHostPlaybackState sets it
-    //   bit 1 kObservedPlaying — last confirmed host playing state
-    //   bit 2 kRequestPending  — a start/stop request is in flight
-    //   bit 3 kTargetPlaying   — desired playing state when pending resolves
-    //   bits 4..63             — incremented on every successful state change
-    //
-    // Invariant: observeHostPlaybackState makes one CAS attempt per host
-    // observation. If another request/observation wins the race, this snapshot
-    // is discarded; the next processBlock supplies a fresh observation.
-    static constexpr std::uint64_t kObservedValid   = 1ull << 0;
-    static constexpr std::uint64_t kObservedPlaying = 1ull << 1;
-    static constexpr std::uint64_t kRequestPending  = 1ull << 2;
-    static constexpr std::uint64_t kTargetPlaying   = 1ull << 3;
-    static constexpr std::uint64_t kStateVersionIncrement = 1ull << 4;
-    std::atomic<std::uint64_t> playbackCommandState_{0};
-    void markPlaybackRequest(bool shouldPlay) noexcept;
+    // True when the host is Logic and document-shared transport reports playing.
     bool logicHostIsPlaying() const noexcept;
 
     struct HostTransportRelayState;
@@ -213,7 +185,7 @@ private:
     void enqueueHostTransport(const std::function<void(HostTransportCoalescer&)>& mutate);
     void scheduleHostTransportFlush();
     void performHostTransportBatch(const HostTransportBatch& batch);
-    bool hostPlaybackTransportAvailable();
+    bool hostSeekAvailable();
 
     // DC/ARA model ownership、F0 completion 和 DC destruction 均遵守消息线程契约。
     // gate 只由消息线程访问；排队 completion 持有 shared_ptr，先检查 closed 再访问 DC。

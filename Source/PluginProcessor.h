@@ -429,10 +429,10 @@ private:
 
 
 
+#if JucePlugin_Build_Standalone
     // Transport control (Standalone-only helpers; canonical truth is playHeadState_)
     std::atomic<double> playStartPosition_{0.0};  // 播放起始位置（按下 Play 时的绝对秒位置）
 
-#if JucePlugin_Build_Standalone
     // Standalone canonical BPM and time signature. These are the only owner-truth
     // for Standalone transport metadata. Host plugins read the host snapshot via
     // getHostTransportSnapshot().
@@ -931,9 +931,9 @@ public:
      *  Defined in PluginProcessor.cpp (requires complete OpenTuneDocumentController type). */
     const PlayHeadState& getPlayHeadState() const noexcept;
 
+#if JucePlugin_Build_Standalone
     double getPlayStartPosition() const { return playStartPosition_.load(); }
 
-#if JucePlugin_Build_Standalone
     // Standalone canonical BPM setter. Validates 1..999 range and writes only
     // the processor-owned canonical bpm_.
     void setBpm(double bpm);

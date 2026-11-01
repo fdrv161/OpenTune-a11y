@@ -162,7 +162,6 @@ private:
     void rememberPresentedPianoRollViewport();
     void showPreferencesDialog();
     bool handleEditorShortcut(const juce::KeyPress& key);
-    void surfaceRegularVst3HostControlledTransport(const char* actionName);
 
     OpenTuneAudioProcessor& processorRef_;
 

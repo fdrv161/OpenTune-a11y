@@ -128,7 +128,8 @@ OpenTuneAudioProcessorEditor::OpenTuneAudioProcessorEditor(OpenTuneAudioProcesso
     , pianoRoll_(processor.getPlayHeadState(), processor.getUndoManager(),
                  [this](SpectrumArray& spectrum, SpectrumArray& peaks) {
                      processorRef_.copyOutputSpectrum(spectrum, peaks);
-                 })
+                 },
+                 false)
     , overviewStrip_(pianoRoll_.getWaveformMipmapCache())
 {
     // 构造顺序固定：limits → resizable → global default size（§4.4）。
@@ -1036,19 +1037,6 @@ bool OpenTuneAudioProcessorEditor::handleEditorShortcut(const juce::KeyPress& ke
         return true;
     }
 
-    if (KeyShortcutConfig::matchesShortcut(shortcutSettings, KeyShortcutConfig::ShortcutId::PlayPause, key)) {
-        playPauseToggleRequested();
-        return true;
-    }
-
-    if (KeyShortcutConfig::matchesShortcut(shortcutSettings, KeyShortcutConfig::ShortcutId::Stop, key)) {
-        stopPlaybackRequested();
-        return true;
-    }
-
-    if (KeyShortcutConfig::matchesShortcut(shortcutSettings, KeyShortcutConfig::ShortcutId::PlayFromStart, key))
-        return pointerShortcutRequested(KeyShortcutConfig::ShortcutId::PlayFromStart);
-
     return false;
 }
 
@@ -1342,46 +1330,14 @@ void OpenTuneAudioProcessorEditor::cursorStyleChanged(CursorStyleId style)
 
 void OpenTuneAudioProcessorEditor::playRequested()
 {
-#if JucePlugin_Enable_ARA
-    if (auto* docController = processorRef_.getDocumentController()) {
-        const double pendingSeek = pianoRoll_.consumePendingSeekTime();
-        if (!docController->requestStartPlayback(pendingSeek))
-            AppLogger::log("ARA: requestStartPlayback failed — host playback controller unavailable");
-        return;
-    }
-#endif
-    surfaceRegularVst3HostControlledTransport("play");
 }
 
 void OpenTuneAudioProcessorEditor::pauseRequested()
 {
-#if JucePlugin_Enable_ARA
-    if (auto* docController = processorRef_.getDocumentController()) {
-        if (!docController->requestStopPlayback())
-            AppLogger::log("ARA: requestStopPlayback failed — host playback controller unavailable");
-        return;
-    }
-#endif
-    surfaceRegularVst3HostControlledTransport("pause");
 }
 
 void OpenTuneAudioProcessorEditor::stopRequested()
 {
-#if JucePlugin_Enable_ARA
-    if (auto* docController = processorRef_.getDocumentController()) {
-        if (!docController->requestStopPlayback())
-            AppLogger::log("ARA: stop request failed — host playback controller unavailable");
-        return;
-    }
-#endif
-    surfaceRegularVst3HostControlledTransport("stop");
-}
-
-void OpenTuneAudioProcessorEditor::surfaceRegularVst3HostControlledTransport(const char* actionName)
-{
-    const juce::String action(actionName);
-    AppLogger::log("PluginEditor: " + action + " requested: host-controlled transport");
-    transportBar_.setRenderStatusText(LOC(kHostControlledTransport));
 }
 
 void OpenTuneAudioProcessorEditor::timelineDisplayModeChanged(TimelineDisplayMode mode)
@@ -1405,20 +1361,8 @@ void OpenTuneAudioProcessorEditor::viewToggled(bool workspaceView)
 
 void OpenTuneAudioProcessorEditor::loopToggled(bool enabled)
 {
-#if JucePlugin_Enable_ARA
-    // ARA-bound VST3: emit the official one-way HostPlaybackController request.
-    // Host may ignore/delay/quantize; loop truth is observed via companion
-    // PositionInfo, never written here. No local canonical write.
-    if (auto* docController = processorRef_.getDocumentController()) {
-        if (!docController->requestEnableCycle(enabled))
-            AppLogger::log("ARA: requestEnableCycle failed — host playback controller unavailable");
-        return;
-    }
-#endif
-    // Regular (non-ARA) VST3: loop is host-controlled only. No local write —
-    // the host owns loop state and surfaces it via PositionInfo.
+    // VST3/ARA: loop 归宿主所有，插件不发送任何 transport 请求。
     juce::ignoreUnused(enabled);
-    surfaceRegularVst3HostControlledTransport("loop");
 }
 
 void OpenTuneAudioProcessorEditor::bpmChanged(double newBpm)
@@ -1598,26 +1542,10 @@ bool OpenTuneAudioProcessorEditor::playheadPositionPreviewRequested(double timeS
 
 void OpenTuneAudioProcessorEditor::playPauseToggleRequested()
 {
-#if JucePlugin_Enable_ARA
-    if (auto* docController = processorRef_.getDocumentController()) {
-        const double pendingSeek = pianoRoll_.consumePendingSeekTime();
-        if (!docController->requestTogglePlayback(processorRef_.isPlaying(), pendingSeek))
-            AppLogger::log("ARA: requestTogglePlayback failed — host playback controller unavailable");
-        return;
-    }
-#endif
-    // Non-ARA VST3: host-controlled transport. Use per-processor isPlaying as fallback.
-    const bool isPlaying = processorRef_.isPlaying();
-    if (isPlaying) {
-        pauseRequested();
-    } else {
-        playRequested();
-    }
 }
 
 void OpenTuneAudioProcessorEditor::stopPlaybackRequested()
 {
-    stopRequested();
 }
 
 bool OpenTuneAudioProcessorEditor::pointerShortcutRequested(KeyShortcutConfig::ShortcutId id)
@@ -1628,23 +1556,6 @@ bool OpenTuneAudioProcessorEditor::pointerShortcutRequested(KeyShortcutConfig::S
             return true;
         case KeyShortcutConfig::ShortcutId::Redo:
             redoRequested();
-            return true;
-        case KeyShortcutConfig::ShortcutId::PlayPause:
-            playPauseToggleRequested();
-            return true;
-        case KeyShortcutConfig::ShortcutId::PlayFromStart:
-#if JucePlugin_Enable_ARA
-            if (auto* docController = processorRef_.getDocumentController()) {
-                const double startPosition = processorRef_.getPlayStartPosition();
-                if (!docController->requestStartPlayback(startPosition))
-                    AppLogger::log("ARA: play-from-start request failed — host playback controller unavailable");
-                return true;
-            }
-#endif
-            surfaceRegularVst3HostControlledTransport("play from start");
-            return true;
-        case KeyShortcutConfig::ShortcutId::Stop:
-            stopPlaybackRequested();
             return true;
         default:
             return false;

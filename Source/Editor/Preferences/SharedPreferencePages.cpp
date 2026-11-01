@@ -921,13 +921,11 @@ public:
               : KeyShortcutConfig::kStandaloneShortcutScopes)
     {
         // 三段式布局：通用 → OpenTune 专属 → OpenDyne 参考
-        // 通用: PlayPause, Stop, PlayFromStart, Undo, Redo, Cut, Copy, Paste, SelectAll,
-        //        Delete, SplitClip, MergeClips, DuplicateClip, NudgeLeft, NudgeRight,
-        //        Viewport navigation/zoom, ToggleSnap, ToolAutoTune, ToolTimeTool, CancelSelection, Eq
+        // 通用（插件）不含 transport：PlayPause / Stop / PlayFromStart 只属于 Standalone，
+        //        其余为 Undo, Redo, Cut, Copy, Paste, SelectAll, Delete, DuplicateClip,
+        //        Viewport navigation/zoom, ToolAutoTune, ToolTimeTool, CancelSelection, Eq
         if (isVst3Plugin) {
             generalIds_ = {
-                KeyShortcutConfig::ShortcutId::PlayPause, KeyShortcutConfig::ShortcutId::Stop,
-                KeyShortcutConfig::ShortcutId::PlayFromStart,
                 KeyShortcutConfig::ShortcutId::ScrollHorizontalLeft, KeyShortcutConfig::ShortcutId::ScrollHorizontalRight,
                 KeyShortcutConfig::ShortcutId::ZoomHorizontalIn, KeyShortcutConfig::ShortcutId::ZoomHorizontalOut,
                 KeyShortcutConfig::ShortcutId::ZoomVerticalIn, KeyShortcutConfig::ShortcutId::ZoomVerticalOut,

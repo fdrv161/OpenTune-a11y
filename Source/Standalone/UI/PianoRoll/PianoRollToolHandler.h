@@ -178,6 +178,7 @@ public:
         std::function<void()> notifyAutoTuneRequested;
         std::function<void()> notifyPlayPauseToggle;
         std::function<void()> notifyStopPlayback;
+        bool transportShortcutsEnabled = true;
         std::function<void()> notifyEscapeKey;
         std::function<void(size_t, float, float)> notifyNoteOffsetChanged;
 
