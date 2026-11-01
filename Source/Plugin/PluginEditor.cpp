@@ -899,9 +899,27 @@ std::vector<juce::ARAPlaybackRegion*>
 OpenTuneAudioProcessorEditor::resolveContentScopeRegions() const
 {
 #if JucePlugin_Enable_ARA
-    // Host selection 完全不参与：scope 只由本实例绑定的 ARA roles 决定
-    // （PlaybackRenderer regions 优先，其次 EditorRenderer regions）。
-    return processorRef_.getAssignedContentRegions();
+    // ARA 角色分派：PlaybackRenderer 实例使用宿主分配的 regions；
+    // 只有 EditorView 的实例使用宿主选择（直接选择，其次有效选择）。
+    // 选择命中分配列表时排到首位，作为当前编辑目标。
+    auto* view = getARAEditorView();
+    auto selectedRegions = view != nullptr
+        ? view->getViewSelection().getPlaybackRegions<juce::ARAPlaybackRegion>()
+        : std::vector<juce::ARAPlaybackRegion*>{};
+    if (selectedRegions.empty() && view != nullptr)
+        selectedRegions = view->getViewSelection().getEffectivePlaybackRegions<juce::ARAPlaybackRegion>();
+
+    auto regions = processorRef_.getAssignedPlaybackRegions();
+    if (regions.empty())
+        return selectedRegions;
+
+    if (!selectedRegions.empty())
+    {
+        const auto focused = std::find(regions.begin(), regions.end(), selectedRegions.front());
+        if (focused != regions.end())
+            std::rotate(regions.begin(), focused, focused + 1);
+    }
+    return regions;
 #else
     return {};
 #endif

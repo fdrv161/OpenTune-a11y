@@ -1487,7 +1487,7 @@ OpenTuneDocumentController* OpenTuneAudioProcessor::getDocumentController() cons
     return juce::ARADocumentControllerSpecialisation::getSpecialisedDocumentController<OpenTuneDocumentController>(controller);
 }
 
-std::vector<juce::ARAPlaybackRegion*> OpenTuneAudioProcessor::getAssignedContentRegions() const
+std::vector<juce::ARAPlaybackRegion*> OpenTuneAudioProcessor::getAssignedPlaybackRegions() const
 {
     if (auto* renderer = getPlaybackRenderer())
         return renderer->getPlaybackRegions<juce::ARAPlaybackRegion>();

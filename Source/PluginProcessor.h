@@ -621,7 +621,7 @@ public:
 #if JucePlugin_Enable_ARA
     OpenTuneDocumentController* getDocumentController() const;
     /** 本插件实例 PlaybackRenderer 绑定的 regions。 */
-    std::vector<juce::ARAPlaybackRegion*> getAssignedContentRegions() const;
+    std::vector<juce::ARAPlaybackRegion*> getAssignedPlaybackRegions() const;
     void didBindToARA() noexcept override;
 #endif
 
