@@ -13,15 +13,9 @@ struct HostTransportBatch
     bool seekIsCommit = false;
     bool restartIfPlaying = false;
 
-    bool hasTransport = false;
-    bool startPlayback = false;
-
-    bool hasCycle = false;
-    bool cycleEnabled = false;
-
     bool empty() const noexcept
     {
-        return !hasSeek && !hasTransport && !hasCycle;
+        return !hasSeek;
     }
 };
 
@@ -49,25 +43,6 @@ public:
         batch_.restartIfPlaying = restartIfPlaying;
     }
 
-    void requestStart() noexcept
-    {
-        batch_.hasTransport = true;
-        batch_.startPlayback = true;
-    }
-
-    void requestStop() noexcept
-    {
-        batch_.hasTransport = true;
-        batch_.startPlayback = false;
-        batch_.restartIfPlaying = false;
-    }
-
-    void requestCycle(bool enabled) noexcept
-    {
-        batch_.hasCycle = true;
-        batch_.cycleEnabled = enabled;
-    }
-
     bool hasPending() const noexcept { return !batch_.empty(); }
 
     HostTransportBatch take() noexcept
@@ -87,39 +62,33 @@ struct HostTransportCall
     {
         Stop,
         Seek,
-        Start,
-        Cycle
+        Start
     };
 
     Kind kind = Kind::Stop;
     double seconds = 0.0;
-    bool cycleEnabled = false;
 };
 
 // Host call order. Logic applies a seek only after playback has stopped,
-// so a restart or an explicit stop is issued before the position change.
+// so a restart issues stop, position, then start.
 inline std::vector<HostTransportCall> planHostTransportCalls(const HostTransportBatch& batch)
 {
     std::vector<HostTransportCall> calls;
-    if (batch.empty())
+    if (!batch.hasSeek)
         return calls;
 
-    calls.reserve(4);
-    const bool explicitStop = batch.hasTransport && !batch.startPlayback;
-    const bool explicitStart = batch.hasTransport && batch.startPlayback;
-    const bool restart = batch.hasSeek && batch.seekIsCommit && batch.restartIfPlaying && !explicitStop;
-    const bool stopFirst = restart || (explicitStop && batch.hasSeek);
-
-    if (stopFirst)
-        calls.push_back({ HostTransportCall::Kind::Stop, 0.0, false });
-    if (batch.hasSeek)
-        calls.push_back({ HostTransportCall::Kind::Seek, batch.seekSeconds, false });
-    if (!explicitStop && (restart || explicitStart))
-        calls.push_back({ HostTransportCall::Kind::Start, 0.0, false });
-    if (explicitStop && !stopFirst)
-        calls.push_back({ HostTransportCall::Kind::Stop, 0.0, false });
-    if (batch.hasCycle)
-        calls.push_back({ HostTransportCall::Kind::Cycle, 0.0, batch.cycleEnabled });
+    if (batch.seekIsCommit && batch.restartIfPlaying)
+    {
+        calls.reserve(3);
+        calls.push_back({ HostTransportCall::Kind::Stop, 0.0 });
+        calls.push_back({ HostTransportCall::Kind::Seek, batch.seekSeconds });
+        calls.push_back({ HostTransportCall::Kind::Start, 0.0 });
+    }
+    else
+    {
+        calls.reserve(1);
+        calls.push_back({ HostTransportCall::Kind::Seek, batch.seekSeconds });
+    }
     return calls;
 }
 

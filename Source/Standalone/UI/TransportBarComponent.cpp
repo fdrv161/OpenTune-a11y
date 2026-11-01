@@ -1534,15 +1534,6 @@ void TransportBarComponent::paint(juce::Graphics& g)
         g.setColour(juce::Colours::black.withAlpha(0.3f));
         g.drawRoundedRectangle(displayBounds, style.fieldRadius, 1.0f);
     }
-
-    if (!embeddedInTopBar_ && renderStatusText_.isNotEmpty()) {
-        g.setColour(UIColors::textSecondary.withAlpha(0.9f));
-        g.setFont(UIColors::getUIFont(12.0f));
-        auto statusBounds = getLocalBounds().toFloat().reduced(14.0f, 6.0f);
-        statusBounds.removeFromLeft(300.0f);
-        statusBounds.removeFromRight(10.0f);
-        g.drawText(renderStatusText_, statusBounds, juce::Justification::centredRight, true);
-    }
 }
 
 void TransportBarComponent::mouseDown(const juce::MouseEvent& e)
@@ -1689,14 +1680,6 @@ void TransportBarComponent::setPlaying(bool playing)
 bool TransportBarComponent::isPlaying() const
 {
     return isPlaying_;
-}
-
-void TransportBarComponent::setRenderStatusText(const juce::String& text)
-{
-    if (renderStatusText_ != text) {
-        renderStatusText_ = text;
-        repaint();
-    }
 }
 
 void TransportBarComponent::setLoopEnabled(bool enabled)

@@ -25,6 +25,8 @@ struct PendingSeekPolicy
         std::uint64_t pendingEpoch = 0;
         std::uint64_t currentEpoch = 0;
         bool hostBound = false;
+        bool hostWasPlayingAtGesture = false;
+        bool hostIsPlayingNow = false;
     };
 
     struct Decision
@@ -72,6 +74,11 @@ struct PendingSeekPolicy
 
         if ((in.nowSeconds - in.issuedAtSeconds) >= holdDeadlineSeconds)
         {
+            if (in.hostWasPlayingAtGesture && !in.hostIsPlayingNow)
+            {
+                decision.clearPending = true;
+                return decision;
+            }
             decision.holdPending = true;
             decision.detachFromHost = true;
             return decision;
